@@ -1,5 +1,7 @@
 package entities
 
+import "errors"
+
 type PieceType string
 
 const (
@@ -17,4 +19,24 @@ type Piece struct {
 	Type       PieceType
 	IsPromoted bool
 	PlayerId   string
+}
+
+func (p *Piece) CanPromote() bool {
+	return p.Type != Kin && p.Type != Ou
+}
+
+func (p *Piece) Promote() error {
+	if !p.CanPromote() {
+		return errors.New("this piece cannot be promoted")
+	}
+	p.IsPromoted = true
+	return nil
+}
+
+func (p *Piece) Demote() error {
+	if !p.IsPromoted {
+		return errors.New("this piece is not promoted")
+	}
+	p.IsPromoted = false
+	return nil
 }
