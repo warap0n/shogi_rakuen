@@ -99,6 +99,26 @@ func TestSignUp_CreateFails(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
+func TestSignUp_EmailAlreadyExists(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	uc := usecase.NewUserUsecase(mockRepo)
+
+	input := &model.User{
+		Email:    "test@example.com",
+		Username: "tester",
+		Password: "plaintext123",
+	}
+
+	// Create() が email 重複エラーを返すように設定
+	mockRepo.On("Create", mock.AnythingOfType("*model.User")).
+		Return(nil, repository.ErrEmailAlreadyExists)
+
+	_, err := uc.SignUp(input)
+
+	assert.ErrorIs(t, err, usecase.ErrEmailAlreadyExists)
+	mockRepo.AssertExpectations(t)
+}
+
 // --- Login ---
 
 func TestLogin_Success(t *testing.T) {

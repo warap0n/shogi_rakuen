@@ -39,6 +39,9 @@ func (uu *UserUsecase) SignUp(user *model.User) (model.UserResponse, error) {
 	}
 	createdUser, err := uu.ur.Create(newUser)
 	if err != nil {
+		if errors.Is(err, repository.ErrEmailAlreadyExists) {
+			return model.UserResponse{}, ErrEmailAlreadyExists // ← usecaseのエラーとして変換
+		}
 		return model.UserResponse{}, err
 	}
 

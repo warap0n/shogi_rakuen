@@ -36,6 +36,40 @@ func TestUserRepository_Create(t *testing.T) {
 	assert.Equal(t, "test@example.com", created.Email)
 }
 
+func TestUserRepository_Create_DuplicateEmail(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+
+	sqlDB, err := db.DB()
+	assert.NoError(t, err)
+	defer sqlDB.Close()
+
+	err = db.AutoMigrate(&model.User{})
+	assert.NoError(t, err)
+
+	repo := repository.NewUserRepository(db)
+
+	// 最初のユーザーを作成
+	user1 := &model.User{
+		Email:    "duplicate@example.com",
+		Username: "user1",
+		Password: "pass1",
+	}
+	_, err = repo.Create(user1)
+	assert.NoError(t, err)
+
+	// 同じメールアドレスで2人目のユーザーを作成
+	user2 := &model.User{
+		Email:    "duplicate@example.com", // 同じメール
+		Username: "user2",
+		Password: "pass2",
+	}
+	_, err = repo.Create(user2)
+
+	// repository.ErrEmailAlreadyExists が返ってくることを期待
+	assert.ErrorIs(t, err, repository.ErrEmailAlreadyExists)
+}
+
 func TestUserRepository_GetUserByEmail(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)

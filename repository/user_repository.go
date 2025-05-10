@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"shogi-rakuen/model"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -23,6 +24,10 @@ func NewUserRepository(db *gorm.DB) IUserRepository {
 
 func (r *userRepository) Create(user *model.User) (*model.User, error) {
 	if err := r.db.Create(user).Error; err != nil {
+		// SQLite, PostgreSQL, MySQL などのユニーク制約エラーに対応（簡易チェック）
+		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "duplicate key") {
+			return nil, ErrEmailAlreadyExists
+		}
 		return nil, err
 	}
 	return user, nil
