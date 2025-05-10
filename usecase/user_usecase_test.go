@@ -1,0 +1,201 @@
+package usecase_test
+
+import (
+	"errors"
+	"os"
+	"shogi-rakuen/model"
+	"shogi-rakuen/usecase"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"golang.org/x/crypto/bcrypt"
+)
+
+// --- モック定義 ---
+
+type MockUserRepository struct {
+	mock.Mock
+}
+
+func (m *MockUserRepository) GetUserByEmail(email string) (*model.User, error) {
+	args := m.Called(email)
+	u := args.Get(0)
+	if u == nil {
+		return nil, args.Error(1)
+	}
+	return u.(*model.User), args.Error(1)
+}
+
+func (m *MockUserRepository) Create(user *model.User) (*model.User, error) {
+	args := m.Called(user)
+
+	u := args.Get(0)
+	if u == nil {
+		return nil, args.Error(1)
+	}
+
+	return u.(*model.User), args.Error(1)
+}
+
+func (m *MockUserRepository) Update(user *model.User) error {
+	args := m.Called(user)
+	return args.Error(0)
+}
+
+func (m *MockUserRepository) Delete(id uint) error {
+	args := m.Called(id)
+	return args.Error(0)
+}
+
+// --- SignUp ---
+
+func TestSignUp_Success(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	usecase := usecase.NewUserUsecase(mockRepo)
+
+	input := &model.User{
+		Email:    "test@example.com",
+		Username: "testuser",
+		Password: "plaintext123",
+	}
+
+	createdUser := &model.User{
+		ID:       1,
+		Email:    input.Email,
+		Username: input.Username,
+		Password: "hashedpass",
+		Rank:     "未設定",
+	}
+
+	mockRepo.On("Create", mock.AnythingOfType("*model.User")).Return(createdUser, nil)
+
+	result, err := usecase.SignUp(input)
+
+	assert.NoError(t, err)
+	assert.Equal(t, createdUser.ID, result.ID)
+	assert.Equal(t, createdUser.Email, result.Email)
+	assert.Equal(t, createdUser.Username, result.Username)
+	assert.Equal(t, createdUser.Rank, result.Rank)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestSignUp_CreateFails(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	usecase := usecase.NewUserUsecase(mockRepo)
+
+	input := &model.User{
+		Email:    "fail@example.com",
+		Username: "failuser",
+		Password: "failpass",
+	}
+
+	mockRepo.On("Create", mock.AnythingOfType("*model.User")).Return(nil, errors.New("db error"))
+
+	_, err := usecase.SignUp(input)
+
+	assert.Error(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+// --- Login ---
+func TestLogin_Success(t *testing.T) {
+	os.Setenv("JWT_SECRET", "test-secret")
+	mockRepo := new(MockUserRepository)
+	uu := usecase.NewUserUsecase(mockRepo)
+
+	plain := "correct-password"
+	hashed, _ := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
+
+	user := &model.User{
+		ID:       1,
+		Email:    "test@example.com",
+		Password: string(hashed),
+	}
+
+	mockRepo.On("GetUserByEmail", "test@example.com").Return(user, nil)
+
+	input := &model.User{
+		Email:    "test@example.com",
+		Password: plain,
+	}
+
+	token, err := uu.Login(input)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, token)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestLogin_EmailNotFound(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	uu := usecase.NewUserUsecase(mockRepo)
+
+	mockRepo.On("GetUserByEmail", "nope@example.com").Return(nil, errors.New("not found"))
+
+	input := &model.User{
+		Email:    "nope@example.com",
+		Password: "any",
+	}
+
+	token, err := uu.Login(input)
+	assert.Error(t, err)
+	assert.Equal(t, "", token)
+	assert.Equal(t, "email not found", err.Error())
+	mockRepo.AssertExpectations(t)
+}
+
+func TestLogin_InvalidPassword(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	uu := usecase.NewUserUsecase(mockRepo)
+
+	// 正しいパスワードと異なる値で失敗させる
+	hashed, _ := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.DefaultCost)
+	user := &model.User{
+		ID:       1,
+		Email:    "test@example.com",
+		Password: string(hashed),
+	}
+
+	mockRepo.On("GetUserByEmail", "test@example.com").Return(user, nil)
+
+	input := &model.User{
+		Email:    "test@example.com",
+		Password: "wrong-password",
+	}
+
+	token, err := uu.Login(input)
+	assert.Error(t, err)
+	assert.Equal(t, "", token)
+	assert.Equal(t, "invalid password", err.Error())
+	mockRepo.AssertExpectations(t)
+}
+
+func TestLogin_JWTSignFail(t *testing.T) {
+	// JWT_SECRET が空の場合など
+	mockRepo := new(MockUserRepository)
+	uu := usecase.NewUserUsecase(mockRepo)
+
+	plain := "pass"
+	hashed, _ := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
+
+	user := &model.User{
+		ID:       1,
+		Email:    "test@example.com",
+		Password: string(hashed),
+	}
+
+	mockRepo.On("GetUserByEmail", "test@example.com").Return(user, nil)
+
+	os.Unsetenv("JWT_SECRET") // シークレットなしでエラーにさせる
+
+	input := &model.User{
+		Email:    "test@example.com",
+		Password: plain,
+	}
+
+	token, err := uu.Login(input)
+	assert.Error(t, err)
+	assert.Equal(t, "", token)
+	assert.Equal(t, "JWT_SECRET is not set", err.Error())
+	mockRepo.AssertExpectations(t)
+}
