@@ -3,5 +3,5 @@ package repository
 import "errors"
 
 var (
-	ErrUserNotFound = errors.New("does not exist email")
+	ErrUserNotFound = errors.New("user not found")
 )

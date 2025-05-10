@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"shogi-rakuen/model"
 
 	"gorm.io/gorm"
@@ -21,12 +22,21 @@ func NewUserRepository(db *gorm.DB) IUserRepository {
 }
 
 func (r *userRepository) Create(user *model.User) (*model.User, error) {
-	// 本番実装が未定ならとりあえず nil 返すだけでOK
-	return nil, nil
+	if err := r.db.Create(user).Error; err != nil {
+		return nil, err
+	}
+	return user, nil
 }
 
 func (r *userRepository) GetUserByEmail(email string) (*model.User, error) {
-	return nil, nil
+	var user model.User
+	if err := r.db.Where("email = ?", email).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *userRepository) Update(user *model.User) error {
