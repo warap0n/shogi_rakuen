@@ -53,7 +53,7 @@ func (m *MockUserRepository) Delete(id uint) error {
 
 func TestSignUp_Success(t *testing.T) {
 	mockRepo := new(MockUserRepository)
-	usecase := usecase.NewUserUsecase(mockRepo)
+	uc := usecase.NewUserUsecase(mockRepo)
 
 	input := &model.User{
 		Email:    "test@example.com",
@@ -71,7 +71,7 @@ func TestSignUp_Success(t *testing.T) {
 
 	mockRepo.On("Create", mock.AnythingOfType("*model.User")).Return(createdUser, nil)
 
-	result, err := usecase.SignUp(input)
+	result, err := uc.SignUp(input)
 
 	assert.NoError(t, err)
 	assert.Equal(t, createdUser.ID, result.ID)
@@ -83,7 +83,7 @@ func TestSignUp_Success(t *testing.T) {
 
 func TestSignUp_CreateFails(t *testing.T) {
 	mockRepo := new(MockUserRepository)
-	usecase := usecase.NewUserUsecase(mockRepo)
+	uc := usecase.NewUserUsecase(mockRepo)
 
 	input := &model.User{
 		Email:    "fail@example.com",
@@ -93,7 +93,7 @@ func TestSignUp_CreateFails(t *testing.T) {
 
 	mockRepo.On("Create", mock.AnythingOfType("*model.User")).Return(nil, errors.New("db error"))
 
-	_, err := usecase.SignUp(input)
+	_, err := uc.SignUp(input)
 
 	assert.Error(t, err)
 	mockRepo.AssertExpectations(t)
@@ -109,7 +109,6 @@ func TestSignUp_EmailAlreadyExists(t *testing.T) {
 		Password: "plaintext123",
 	}
 
-	// Create() が email 重複エラーを返すように設定
 	mockRepo.On("Create", mock.AnythingOfType("*model.User")).
 		Return(nil, repository.ErrEmailAlreadyExists)
 
@@ -124,7 +123,7 @@ func TestSignUp_EmailAlreadyExists(t *testing.T) {
 func TestLogin_Success(t *testing.T) {
 	os.Setenv("JWT_SECRET", "test-secret")
 	mockRepo := new(MockUserRepository)
-	uu := usecase.NewUserUsecase(mockRepo)
+	uc := usecase.NewUserUsecase(mockRepo)
 
 	plain := "correct-password"
 	hashed, _ := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
@@ -142,7 +141,7 @@ func TestLogin_Success(t *testing.T) {
 		Password: plain,
 	}
 
-	token, err := uu.Login(input)
+	token, err := uc.Login(input)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, token)
 	mockRepo.AssertExpectations(t)
@@ -150,7 +149,7 @@ func TestLogin_Success(t *testing.T) {
 
 func TestLogin_EmailNotFound(t *testing.T) {
 	mockRepo := new(MockUserRepository)
-	uu := usecase.NewUserUsecase(mockRepo)
+	uc := usecase.NewUserUsecase(mockRepo)
 
 	mockRepo.On("GetUserByEmail", "nope@example.com").Return(nil, errors.New("not found"))
 
@@ -159,7 +158,7 @@ func TestLogin_EmailNotFound(t *testing.T) {
 		Password: "any",
 	}
 
-	token, err := uu.Login(input)
+	token, err := uc.Login(input)
 	assert.Error(t, err)
 	assert.Equal(t, "", token)
 	assert.Equal(t, usecase.ErrEmailNotFound, err)
@@ -168,7 +167,7 @@ func TestLogin_EmailNotFound(t *testing.T) {
 
 func TestLogin_InvalidPassword(t *testing.T) {
 	mockRepo := new(MockUserRepository)
-	uu := usecase.NewUserUsecase(mockRepo)
+	uc := usecase.NewUserUsecase(mockRepo)
 
 	hashed, _ := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.DefaultCost)
 	user := &model.User{
@@ -184,7 +183,7 @@ func TestLogin_InvalidPassword(t *testing.T) {
 		Password: "wrong-password",
 	}
 
-	token, err := uu.Login(input)
+	token, err := uc.Login(input)
 	assert.Error(t, err)
 	assert.Equal(t, "", token)
 	assert.Equal(t, usecase.ErrInvalidPassword, err)
@@ -193,7 +192,7 @@ func TestLogin_InvalidPassword(t *testing.T) {
 
 func TestLogin_JWTSignFail(t *testing.T) {
 	mockRepo := new(MockUserRepository)
-	uu := usecase.NewUserUsecase(mockRepo)
+	uc := usecase.NewUserUsecase(mockRepo)
 
 	plain := "pass"
 	hashed, _ := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
@@ -206,14 +205,14 @@ func TestLogin_JWTSignFail(t *testing.T) {
 
 	mockRepo.On("GetUserByEmail", "test@example.com").Return(user, nil)
 
-	os.Unsetenv("JWT_SECRET") // シークレットなしでエラーにさせる
+	os.Unsetenv("JWT_SECRET")
 
 	input := &model.User{
 		Email:    "test@example.com",
 		Password: plain,
 	}
 
-	token, err := uu.Login(input)
+	token, err := uc.Login(input)
 	assert.Error(t, err)
 	assert.Equal(t, "", token)
 	assert.Equal(t, usecase.ErrJWTSecretUnset, err)
@@ -222,7 +221,7 @@ func TestLogin_JWTSignFail(t *testing.T) {
 
 func TestGetUserByEmail_Success(t *testing.T) {
 	mockRepo := new(MockUserRepository)
-	uu := usecase.NewUserUsecase(mockRepo)
+	uc := usecase.NewUserUsecase(mockRepo)
 
 	user := &model.User{
 		ID:       1,
@@ -233,7 +232,7 @@ func TestGetUserByEmail_Success(t *testing.T) {
 
 	mockRepo.On("GetUserByEmail", "test@example.com").Return(user, nil)
 
-	resp, err := uu.GetUserByEmail("test@example.com")
+	resp, err := uc.GetUserByEmail("test@example.com")
 
 	assert.NoError(t, err)
 	assert.Equal(t, model.UserResponse{
@@ -247,11 +246,11 @@ func TestGetUserByEmail_Success(t *testing.T) {
 
 func TestGetUserByEmail_UserNotFound(t *testing.T) {
 	mockRepo := new(MockUserRepository)
-	uu := usecase.NewUserUsecase(mockRepo)
+	uc := usecase.NewUserUsecase(mockRepo)
 
 	mockRepo.On("GetUserByEmail", "notfound@example.com").Return(nil, repository.ErrUserNotFound)
 
-	_, err := uu.GetUserByEmail("notfound@example.com")
+	_, err := uc.GetUserByEmail("notfound@example.com")
 
 	assert.ErrorIs(t, err, usecase.ErrEmailNotFound)
 	mockRepo.AssertExpectations(t)
@@ -259,12 +258,12 @@ func TestGetUserByEmail_UserNotFound(t *testing.T) {
 
 func TestGetUserByEmail_OtherError(t *testing.T) {
 	mockRepo := new(MockUserRepository)
-	uu := usecase.NewUserUsecase(mockRepo)
+	uc := usecase.NewUserUsecase(mockRepo)
 
 	mockErr := errors.New("db connection failed")
 	mockRepo.On("GetUserByEmail", "fail@example.com").Return(nil, mockErr)
 
-	_, err := uu.GetUserByEmail("fail@example.com")
+	_, err := uc.GetUserByEmail("fail@example.com")
 
 	assert.Equal(t, mockErr, err)
 	mockRepo.AssertExpectations(t)
