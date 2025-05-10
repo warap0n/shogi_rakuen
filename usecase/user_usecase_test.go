@@ -99,6 +99,7 @@ func TestSignUp_CreateFails(t *testing.T) {
 }
 
 // --- Login ---
+
 func TestLogin_Success(t *testing.T) {
 	os.Setenv("JWT_SECRET", "test-secret")
 	mockRepo := new(MockUserRepository)
@@ -140,7 +141,7 @@ func TestLogin_EmailNotFound(t *testing.T) {
 	token, err := uu.Login(input)
 	assert.Error(t, err)
 	assert.Equal(t, "", token)
-	assert.Equal(t, "email not found", err.Error())
+	assert.Equal(t, usecase.ErrEmailNotFound, err)
 	mockRepo.AssertExpectations(t)
 }
 
@@ -148,7 +149,6 @@ func TestLogin_InvalidPassword(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	uu := usecase.NewUserUsecase(mockRepo)
 
-	// 正しいパスワードと異なる値で失敗させる
 	hashed, _ := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.DefaultCost)
 	user := &model.User{
 		ID:       1,
@@ -166,12 +166,11 @@ func TestLogin_InvalidPassword(t *testing.T) {
 	token, err := uu.Login(input)
 	assert.Error(t, err)
 	assert.Equal(t, "", token)
-	assert.Equal(t, "invalid password", err.Error())
+	assert.Equal(t, usecase.ErrInvalidPassword, err)
 	mockRepo.AssertExpectations(t)
 }
 
 func TestLogin_JWTSignFail(t *testing.T) {
-	// JWT_SECRET が空の場合など
 	mockRepo := new(MockUserRepository)
 	uu := usecase.NewUserUsecase(mockRepo)
 
@@ -196,6 +195,6 @@ func TestLogin_JWTSignFail(t *testing.T) {
 	token, err := uu.Login(input)
 	assert.Error(t, err)
 	assert.Equal(t, "", token)
-	assert.Equal(t, "JWT_SECRET is not set", err.Error())
+	assert.Equal(t, usecase.ErrJWTSecretUnset, err)
 	mockRepo.AssertExpectations(t)
 }

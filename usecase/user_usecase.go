@@ -1,7 +1,6 @@
 package usecase
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"shogi-rakuen/model"
@@ -56,13 +55,13 @@ func (uu *UserUsecase) Login(user *model.User) (string, error) {
 	// DBからユーザー取得（Emailで）
 	storedUser, err := uu.ur.GetUserByEmail(user.Email)
 	if err != nil {
-		return "", errors.New("email not found")
+		return "", ErrEmailNotFound
 	}
 
 	// パスワード検証
 	err = bcrypt.CompareHashAndPassword([]byte(storedUser.Password), []byte(user.Password))
 	if err != nil {
-		return "", errors.New("invalid password")
+		return "", ErrInvalidPassword
 	}
 
 	// JWT生成
@@ -76,7 +75,7 @@ func (uu *UserUsecase) Login(user *model.User) (string, error) {
 
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		return "", errors.New("JWT_SECRET is not set")
+		return "", ErrJWTSecretUnset
 	}
 
 	t, err := token.SignedString([]byte(secret))
