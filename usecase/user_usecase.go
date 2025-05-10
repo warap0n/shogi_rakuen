@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"shogi-rakuen/model"
@@ -14,7 +15,7 @@ import (
 type IUserUsecase interface {
 	SignUp(user *model.User) (model.UserResponse, error)
 	Login(user *model.User) (string, error)
-	GetUserByEmail(id uint) (model.UserResponse, error)
+	GetUserByEmail(email string) (model.UserResponse, error)
 }
 
 type UserUsecase struct {
@@ -86,12 +87,19 @@ func (uu *UserUsecase) Login(user *model.User) (string, error) {
 	return t, nil
 }
 
-func (uu *UserUsecase) GetUserByEmail(id uint) (model.UserResponse, error) {
-	// dummyのユーザー情報を返すだけの仮実装
-	return model.UserResponse{
-		ID:       id,
-		Email:    "dummy@example.com",
-		Username: "dummyuser",
-		Rank:     "未設定",
-	}, nil
+func (uu *UserUsecase) GetUserByEmail(email string) (model.UserResponse, error) {
+	user, err := uu.ur.GetUserByEmail(email)
+	if errors.Is(err, repository.ErrUserNotFound) {
+		return model.UserResponse{}, ErrEmailNotFound
+	}
+	if err != nil {
+		return model.UserResponse{}, err
+	}
+	response := model.UserResponse{
+		ID:       user.ID,
+		Email:    user.Email,
+		Username: user.Username,
+		Rank:     user.Rank,
+	}
+	return response, nil
 }

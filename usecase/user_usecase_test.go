@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"shogi-rakuen/model"
+	"shogi-rakuen/repository"
 	"shogi-rakuen/usecase"
 	"testing"
 
@@ -196,5 +197,55 @@ func TestLogin_JWTSignFail(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, "", token)
 	assert.Equal(t, usecase.ErrJWTSecretUnset, err)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestGetUserByEmail_Success(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	uu := usecase.NewUserUsecase(mockRepo)
+
+	user := &model.User{
+		ID:       1,
+		Email:    "test@example.com",
+		Username: "testuser",
+		Rank:     "初段",
+	}
+
+	mockRepo.On("GetUserByEmail", "test@example.com").Return(user, nil)
+
+	resp, err := uu.GetUserByEmail("test@example.com")
+
+	assert.NoError(t, err)
+	assert.Equal(t, model.UserResponse{
+		ID:       user.ID,
+		Email:    user.Email,
+		Username: user.Username,
+		Rank:     user.Rank,
+	}, resp)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestGetUserByEmail_UserNotFound(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	uu := usecase.NewUserUsecase(mockRepo)
+
+	mockRepo.On("GetUserByEmail", "notfound@example.com").Return(nil, repository.ErrUserNotFound)
+
+	_, err := uu.GetUserByEmail("notfound@example.com")
+
+	assert.ErrorIs(t, err, usecase.ErrEmailNotFound)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestGetUserByEmail_OtherError(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	uu := usecase.NewUserUsecase(mockRepo)
+
+	mockErr := errors.New("db connection failed")
+	mockRepo.On("GetUserByEmail", "fail@example.com").Return(nil, mockErr)
+
+	_, err := uu.GetUserByEmail("fail@example.com")
+
+	assert.Equal(t, mockErr, err)
 	mockRepo.AssertExpectations(t)
 }
