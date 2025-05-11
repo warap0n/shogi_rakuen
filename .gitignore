@@ -1,4 +1,5 @@
 .env
+app.db
 
 main
 /docker
