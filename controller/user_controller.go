@@ -3,8 +3,9 @@ package controller
 import (
 	"errors"
 	"net/http"
-	"shogi-rakuen/model"
+	"shogi-rakuen/controller/dto"
 	"shogi-rakuen/usecase"
+	"shogi-rakuen/usecase/input"
 
 	"github.com/labstack/echo/v4"
 )
@@ -19,7 +20,7 @@ func NewUserController(uu usecase.IUserUsecase) *UserController {
 
 // POST /signup
 func (uc *UserController) SignUp(c echo.Context) error {
-	var user model.User
+	var user dto.SignupRequest
 	if err := c.Bind(&user); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid input"})
 	}
@@ -27,8 +28,12 @@ func (uc *UserController) SignUp(c echo.Context) error {
 	if err := c.Validate(&user); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "validation failed"})
 	}
-
-	created, err := uc.uu.SignUp(&user)
+	input := input.SignupInput{
+		Email:    user.Email,
+		Username: user.Username,
+		Password: user.Password,
+	}
+	created, err := uc.uu.SignUp(input)
 	if err != nil {
 		switch {
 		case errors.Is(err, usecase.ErrEmailAlreadyExists):
@@ -42,6 +47,38 @@ func (uc *UserController) SignUp(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusCreated, created)
+}
+
+// POST /login
+func (uc *UserController) Login(c echo.Context) error {
+	var req dto.LoginRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid input"})
+	}
+
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "validation failed"})
+	}
+
+	input := input.LoginInput{
+		Email:    req.Email,
+		Password: req.Password,
+	}
+	token, err := uc.uu.Login(input)
+	if err != nil {
+		switch {
+		case errors.Is(err, usecase.ErrEmailNotFound):
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "email not found"})
+		case errors.Is(err, usecase.ErrInvalidPassword):
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid password"})
+		case errors.Is(err, usecase.ErrJWTSecretUnset):
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal server error"})
+		default:
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal server error"})
+		}
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{"token": token})
 }
 
 // GET /users/:email

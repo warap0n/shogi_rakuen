@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"shogi-rakuen/controller"
+	"shogi-rakuen/controller/dto"
 	"shogi-rakuen/model"
+	"shogi-rakuen/usecase/input"
 	"testing"
 
 	"github.com/go-playground/validator/v10"
@@ -14,56 +16,59 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// ダミーusecase（正常な登録を想定）
+// --- テスト内だけで使うバリデータ ---
+type customValidator struct {
+	validator *validator.Validate
+}
+
+func (cv *customValidator) Validate(i interface{}) error {
+	return cv.validator.Struct(i)
+}
+
+// --- ダミー usecase ---
 type DummyUserUsecase struct{}
 
-type CustomValidator struct {
-	Validator *validator.Validate
-}
-
-func (cv *CustomValidator) Validate(i interface{}) error {
-	return cv.Validator.Struct(i)
-}
-
-func (d *DummyUserUsecase) SignUp(user *model.User) (model.UserResponse, error) {
+func (d *DummyUserUsecase) SignUp(in input.SignupInput) (model.UserResponse, error) {
 	return model.UserResponse{
 		ID:       1,
-		Email:    user.Email,
-		Username: user.Username,
+		Email:    in.Email,
+		Username: in.Username,
 		Rank:     "未設定",
 	}, nil
 }
-func (d *DummyUserUsecase) Login(user *model.User) (string, error) { return "", nil }
+
+func (d *DummyUserUsecase) Login(input input.LoginInput) (string, error) {
+	return "", nil
+}
+
 func (d *DummyUserUsecase) GetUserByEmail(email string) (model.UserResponse, error) {
 	return model.UserResponse{}, nil
 }
 
+// --- テスト本体 ---
 func TestSignUp_InvalidInput(t *testing.T) {
 	e := echo.New()
+	e.Validator = &customValidator{validator: validator.New()}
 
-	// validator登録
-	e.Validator = &CustomValidator{Validator: validator.New()}
-
-	// コントローラ設定
 	uc := controller.NewUserController(&DummyUserUsecase{})
 	e.POST("/signup", uc.SignUp)
 
-	// 無効な入力（空のemail）
-	body := map[string]interface{}{
-		"email":    "",
-		"username": "testuser",
-		"password": "secret123",
+	// 無効なリクエスト：Email が空
+	body := dto.SignupRequest{
+		Email:    "",
+		Username: "testuser",
+		Password: "secret123",
 	}
 	jsonBody, _ := json.Marshal(body)
 
 	req := httptest.NewRequest(http.MethodPost, "/signup", bytes.NewReader(jsonBody))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
-
 	c := e.NewContext(req, rec)
 
 	// 実行
 	if assert.NoError(t, uc.SignUp(c)) {
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.Contains(t, rec.Body.String(), "validation failed")
 	}
 }

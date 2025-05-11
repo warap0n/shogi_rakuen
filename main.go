@@ -42,7 +42,7 @@ func main() {
 
 	// ルーティング
 	e.POST("/signup", userController.SignUp)
-	// e.POST("/login", userController.Login)
+	e.POST("/login", userController.Login)
 
 	// 起動
 	e.Logger.Fatal(e.Start(":8080"))
