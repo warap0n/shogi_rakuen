@@ -6,6 +6,7 @@ import (
 	"shogi-rakuen/model"
 	"shogi-rakuen/repository"
 	"shogi-rakuen/usecase"
+	"shogi-rakuen/usecase/input"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -30,12 +31,10 @@ func (m *MockUserRepository) GetUserByEmail(email string) (*model.User, error) {
 
 func (m *MockUserRepository) Create(user *model.User) (*model.User, error) {
 	args := m.Called(user)
-
 	u := args.Get(0)
 	if u == nil {
 		return nil, args.Error(1)
 	}
-
 	return u.(*model.User), args.Error(1)
 }
 
@@ -55,7 +54,7 @@ func TestSignUp_Success(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	uc := usecase.NewUserUsecase(mockRepo)
 
-	input := &model.User{
+	input := input.SignupInput{
 		Email:    "test@example.com",
 		Username: "testuser",
 		Password: "plaintext123",
@@ -85,7 +84,7 @@ func TestSignUp_CreateFails(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	uc := usecase.NewUserUsecase(mockRepo)
 
-	input := &model.User{
+	input := input.SignupInput{
 		Email:    "fail@example.com",
 		Username: "failuser",
 		Password: "failpass",
@@ -103,7 +102,7 @@ func TestSignUp_EmailAlreadyExists(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	uc := usecase.NewUserUsecase(mockRepo)
 
-	input := &model.User{
+	input := input.SignupInput{
 		Email:    "test@example.com",
 		Username: "tester",
 		Password: "plaintext123",
@@ -136,7 +135,7 @@ func TestLogin_Success(t *testing.T) {
 
 	mockRepo.On("GetUserByEmail", "test@example.com").Return(user, nil)
 
-	input := &model.User{
+	input := input.LoginInput{
 		Email:    "test@example.com",
 		Password: plain,
 	}
@@ -153,7 +152,7 @@ func TestLogin_EmailNotFound(t *testing.T) {
 
 	mockRepo.On("GetUserByEmail", "nope@example.com").Return(nil, errors.New("not found"))
 
-	input := &model.User{
+	input := input.LoginInput{
 		Email:    "nope@example.com",
 		Password: "any",
 	}
@@ -178,7 +177,7 @@ func TestLogin_InvalidPassword(t *testing.T) {
 
 	mockRepo.On("GetUserByEmail", "test@example.com").Return(user, nil)
 
-	input := &model.User{
+	input := input.LoginInput{
 		Email:    "test@example.com",
 		Password: "wrong-password",
 	}
@@ -207,7 +206,7 @@ func TestLogin_JWTSignFail(t *testing.T) {
 
 	os.Unsetenv("JWT_SECRET")
 
-	input := &model.User{
+	input := input.LoginInput{
 		Email:    "test@example.com",
 		Password: plain,
 	}
@@ -218,6 +217,8 @@ func TestLogin_JWTSignFail(t *testing.T) {
 	assert.Equal(t, usecase.ErrJWTSecretUnset, err)
 	mockRepo.AssertExpectations(t)
 }
+
+// --- GetUserByEmail ---
 
 func TestGetUserByEmail_Success(t *testing.T) {
 	mockRepo := new(MockUserRepository)

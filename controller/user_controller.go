@@ -1,0 +1,97 @@
+package controller
+
+import (
+	"errors"
+	"net/http"
+	"shogi-rakuen/controller/dto"
+	"shogi-rakuen/usecase"
+	"shogi-rakuen/usecase/input"
+
+	"github.com/labstack/echo/v4"
+)
+
+type UserController struct {
+	uu usecase.IUserUsecase
+}
+
+func NewUserController(uu usecase.IUserUsecase) *UserController {
+	return &UserController{uu}
+}
+
+// POST /signup
+func (uc *UserController) SignUp(c echo.Context) error {
+	var user dto.SignupRequest
+	if err := c.Bind(&user); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid input"})
+	}
+
+	if err := c.Validate(&user); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "validation failed"})
+	}
+	input := input.SignupInput{
+		Email:    user.Email,
+		Username: user.Username,
+		Password: user.Password,
+	}
+	created, err := uc.uu.SignUp(input)
+	if err != nil {
+		switch {
+		case errors.Is(err, usecase.ErrEmailAlreadyExists):
+			return c.JSON(http.StatusConflict, echo.Map{"error": "email already registered"})
+
+		default:
+			// 本番では詳細を返さずログに残す
+			// log.Error(err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal server error"})
+		}
+	}
+
+	return c.JSON(http.StatusCreated, created)
+}
+
+// POST /login
+func (uc *UserController) Login(c echo.Context) error {
+	var req dto.LoginRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid input"})
+	}
+
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "validation failed"})
+	}
+
+	input := input.LoginInput{
+		Email:    req.Email,
+		Password: req.Password,
+	}
+	token, err := uc.uu.Login(input)
+	if err != nil {
+		switch {
+		case errors.Is(err, usecase.ErrEmailNotFound):
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "email not found"})
+		case errors.Is(err, usecase.ErrInvalidPassword):
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid password"})
+		case errors.Is(err, usecase.ErrJWTSecretUnset):
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal server error"})
+		default:
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal server error"})
+		}
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{"token": token})
+}
+
+// GET /users/:email
+func (uc *UserController) GetUserByEmail(c echo.Context) error {
+	email := c.Param("email")
+
+	resp, err := uc.uu.GetUserByEmail(email)
+	if err != nil {
+		if err == usecase.ErrEmailNotFound {
+			return c.JSON(http.StatusNotFound, echo.Map{"error": "user not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, resp)
+}
