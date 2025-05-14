@@ -3,9 +3,11 @@ package controller
 import (
 	"errors"
 	"net/http"
+	"os"
 	"shogi-rakuen/controller/dto"
 	"shogi-rakuen/usecase"
 	"shogi-rakuen/usecase/input"
+	"time"
 
 	"github.com/labstack/echo/v4"
 )
@@ -72,13 +74,29 @@ func (uc *UserController) Login(c echo.Context) error {
 		case errors.Is(err, usecase.ErrInvalidPassword):
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid password"})
 		case errors.Is(err, usecase.ErrJWTSecretUnset):
-			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal server error"})
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "jwt secret not set"})
 		default:
 			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal server error"})
 		}
 	}
 
-	return c.JSON(http.StatusOK, echo.Map{"token": token})
+	// Cookie にセット
+	cookie := new(http.Cookie)
+	cookie.Name = "access_token"
+	cookie.Value = token
+	cookie.Path = "/"
+	cookie.Domain = os.Getenv("API_DOMAIN")
+	cookie.Expires = time.Now().Add(24 * time.Hour)
+	cookie.HttpOnly = true // JS から参照不可
+	// cookie.Secure = true   // Todo:本番用
+	cookie.Secure = false // 開発用
+
+	cookie.SameSite = http.SameSiteLaxMode // 必要に応じて Strict も可
+	c.SetCookie(cookie)
+
+	// JSON でも返したければ併記
+	return c.JSON(http.StatusOK, echo.Map{})
+
 }
 
 // GET /users/:email
