@@ -7,16 +7,23 @@ import (
 	"shogi-rakuen/controller/dto"
 	"shogi-rakuen/usecase"
 	"shogi-rakuen/usecase/input"
+	"strconv"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 )
 
+type IUserController interface {
+	SignUp(c echo.Context) error
+	Login(c echo.Context) error
+	Me(c echo.Context) error
+}
 type UserController struct {
 	uu usecase.IUserUsecase
 }
 
-func NewUserController(uu usecase.IUserUsecase) *UserController {
+func NewUserController(uu usecase.IUserUsecase) IUserController {
 	return &UserController{uu}
 }
 
@@ -99,13 +106,23 @@ func (uc *UserController) Login(c echo.Context) error {
 
 }
 
-// GET /users/:email
-func (uc *UserController) GetUserByEmail(c echo.Context) error {
-	email := c.Param("email")
+// GET /me
+func (uc *UserController) Me(c echo.Context) error {
+	// 1. JWT ミドルウェアでセットされたトークンを取得
+	token := c.Get("user").(*jwt.Token)
 
-	resp, err := uc.uu.GetUserByEmail(email)
+	// 2. クレームから Subject（sub）を取り出し、ユーザーID に変換
+	claims := token.Claims.(jwt.MapClaims)
+	sub := claims["sub"].(string)
+	userId, err := strconv.Atoi(sub)
 	if err != nil {
-		if err == usecase.ErrEmailNotFound {
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid user id in token"})
+	}
+
+	// 3. ID でユースケースを呼ぶ（GetUserByID を実装しておく）
+	resp, err := uc.uu.GetUserById(uint(userId))
+	if err != nil {
+		if errors.Is(err, usecase.ErrInvalidUserId) {
 			return c.JSON(http.StatusNotFound, echo.Map{"error": "user not found"})
 		}
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
