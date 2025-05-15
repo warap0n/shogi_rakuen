@@ -16,7 +16,7 @@ import (
 type IUserUsecase interface {
 	SignUp(input input.SignupInput) (model.UserResponse, error)
 	Login(input input.LoginInput) (string, error)
-	GetUserByEmail(email string) (model.UserResponse, error)
+	GetUserById(id uint) (model.UserResponse, error)
 }
 
 type UserUsecase struct {
@@ -85,10 +85,10 @@ func (uu *UserUsecase) Login(input input.LoginInput) (string, error) {
 	return signedToken, nil
 }
 
-func (uu *UserUsecase) GetUserByEmail(email string) (model.UserResponse, error) {
-	user, err := uu.ur.GetUserByEmail(email)
+func (uu *UserUsecase) GetUserById(id uint) (model.UserResponse, error) {
+	user, err := uu.ur.GetUserById(id)
 	if errors.Is(err, repository.ErrUserNotFound) {
-		return model.UserResponse{}, ErrEmailNotFound
+		return model.UserResponse{}, ErrUserNotFound
 	}
 	if err != nil {
 		return model.UserResponse{}, err

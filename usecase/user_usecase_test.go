@@ -20,6 +20,15 @@ type MockUserRepository struct {
 	mock.Mock
 }
 
+func (m *MockUserRepository) GetUserById(id uint) (*model.User, error) {
+	args := m.Called(id)
+	u := args.Get(0)
+	if u == nil {
+		return nil, args.Error(1)
+	}
+	return u.(*model.User), args.Error(1)
+}
+
 func (m *MockUserRepository) GetUserByEmail(email string) (*model.User, error) {
 	args := m.Called(email)
 	u := args.Get(0)
@@ -218,54 +227,54 @@ func TestLogin_JWTSignFail(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
-// --- GetUserByEmail ---
+// --- GetUserById のテスト ---
 
-func TestGetUserByEmail_Success(t *testing.T) {
+func TestGetUserById_Success(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	uc := usecase.NewUserUsecase(mockRepo)
 
 	user := &model.User{
-		ID:       1,
-		Email:    "test@example.com",
-		Username: "testuser",
-		Rank:     "初段",
+		ID:       42,
+		Email:    "foo@bar",
+		Username: "foobar",
+		Rank:     "三段",
 	}
 
-	mockRepo.On("GetUserByEmail", "test@example.com").Return(user, nil)
+	// モックは ID=42 でこの user を返す
+	mockRepo.On("GetUserById", uint(42)).Return(user, nil)
 
-	resp, err := uc.GetUserByEmail("test@example.com")
-
+	resp, err := uc.GetUserById(42)
 	assert.NoError(t, err)
-	assert.Equal(t, model.UserResponse{
-		ID:       user.ID,
-		Email:    user.Email,
-		Username: user.Username,
-		Rank:     user.Rank,
-	}, resp)
+	assert.Equal(t, uint(42), resp.ID)
+	assert.Equal(t, "foo@bar", resp.Email)
+	assert.Equal(t, "foobar", resp.Username)
+	assert.Equal(t, "三段", resp.Rank)
+
 	mockRepo.AssertExpectations(t)
 }
 
-func TestGetUserByEmail_UserNotFound(t *testing.T) {
+func TestGetUserById_NotFound(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	uc := usecase.NewUserUsecase(mockRepo)
 
-	mockRepo.On("GetUserByEmail", "notfound@example.com").Return(nil, repository.ErrUserNotFound)
+	// 存在しない ID を渡すとリポジトリは ErrUserNotFound
+	mockRepo.On("GetUserById", uint(999)).Return(nil, repository.ErrUserNotFound)
 
-	_, err := uc.GetUserByEmail("notfound@example.com")
+	_, err := uc.GetUserById(999)
+	assert.ErrorIs(t, err, usecase.ErrUserNotFound)
 
-	assert.ErrorIs(t, err, usecase.ErrEmailNotFound)
 	mockRepo.AssertExpectations(t)
 }
 
-func TestGetUserByEmail_OtherError(t *testing.T) {
+func TestGetUserById_OtherError(t *testing.T) {
 	mockRepo := new(MockUserRepository)
 	uc := usecase.NewUserUsecase(mockRepo)
 
-	mockErr := errors.New("db connection failed")
-	mockRepo.On("GetUserByEmail", "fail@example.com").Return(nil, mockErr)
+	mockErr := errors.New("db error")
+	mockRepo.On("GetUserById", uint(1)).Return(nil, mockErr)
 
-	_, err := uc.GetUserByEmail("fail@example.com")
-
+	_, err := uc.GetUserById(1)
 	assert.Equal(t, mockErr, err)
+
 	mockRepo.AssertExpectations(t)
 }
