@@ -9,6 +9,7 @@ import (
 )
 
 type IUserRepository interface {
+	GetUserById(id uint) (*model.User, error)
 	GetUserByEmail(email string) (*model.User, error)
 	Create(user *model.User) (*model.User, error)
 	Update(user *model.User) error
@@ -31,6 +32,17 @@ func (r *userRepository) Create(user *model.User) (*model.User, error) {
 		return nil, err
 	}
 	return user, nil
+}
+
+func (r *userRepository) GetUserById(id uint) (*model.User, error) {
+	var user model.User
+	if err := r.db.First(&user, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *userRepository) GetUserByEmail(email string) (*model.User, error) {
