@@ -111,18 +111,20 @@ func (uc *UserController) Me(c echo.Context) error {
 	// 1. JWT ミドルウェアでセットされたトークンを取得
 	token := c.Get("user").(*jwt.Token)
 
-	// 2. クレームから Subject（sub）を取り出し、ユーザーID に変換
-	claims := token.Claims.(jwt.MapClaims)
-	sub := claims["sub"].(string)
+	// 2. RegisteredClaims から Subject（sub）を取り出し、ユーザーID に変換
+	regClaims, ok := token.Claims.(jwt.RegisteredClaims)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid token claims"})
+	}
+	sub := regClaims.Subject
 	userId, err := strconv.Atoi(sub)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid user id in token"})
 	}
 
-	// 3. ID でユースケースを呼ぶ（GetUserByID を実装しておく）
 	resp, err := uc.uu.GetUserById(uint(userId))
 	if err != nil {
-		if errors.Is(err, usecase.ErrInvalidUserId) {
+		if errors.Is(err, usecase.ErrUserNotFound) {
 			return c.JSON(http.StatusNotFound, echo.Map{"error": "user not found"})
 		}
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})

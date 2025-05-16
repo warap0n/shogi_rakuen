@@ -22,7 +22,7 @@ func (cv *CustomValidator) Validate(i interface{}) error {
 
 // NewRouter コントローラを渡して Echo を返す
 func NewRouter(
-	userController *controller.UserController,
+	userController controller.IUserController,
 ) *echo.Echo {
 	// Echo インスタンス生成
 	e := echo.New()
@@ -51,13 +51,14 @@ func NewRouter(
 	echoJWTConfig := echojwt.Config{
 		SigningKey:  []byte(os.Getenv("JWT_SECRET")),
 		TokenLookup: "cookie:access_token", // クッキー名と一致
+
 	}
 
 	auth := e.Group("")
 	auth.Use(echojwt.WithConfig(echoJWTConfig))
 
 	// 認証必須ルート
-	auth.GET("/me", userController.GetUserByEmail)
+	auth.GET("/me", userController.Me)
 
 	return e
 }

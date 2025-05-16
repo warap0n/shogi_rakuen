@@ -13,8 +13,10 @@ import (
 	"shogi-rakuen/usecase"
 	"shogi-rakuen/usecase/input"
 	"testing"
+	"time"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 )
@@ -32,57 +34,49 @@ func (cv *customValidator) Validate(i interface{}) error {
 type DummyUserUsecase struct{}
 
 func (d *DummyUserUsecase) SignUp(in input.SignupInput) (model.UserResponse, error) {
-	return model.UserResponse{
-		ID:       1,
-		Email:    in.Email,
-		Username: in.Username,
-		Rank:     "未設定",
-	}, nil
+	return model.UserResponse{ID: 1, Email: in.Email, Username: in.Username, Rank: "未設定"}, nil
 }
 
 func (d *DummyUserUsecase) Login(in input.LoginInput) (string, error) {
-	if in.Email == "no-user@example.com" {
+	switch {
+	case in.Email == "no-user@example.com":
 		return "", usecase.ErrEmailNotFound
-	}
-	if in.Password == "wrong" {
+	case in.Password == "wrong":
 		return "", usecase.ErrInvalidPassword
-	}
-	if in.Password == "no-secret" {
+	case in.Password == "no-secret":
 		os.Unsetenv("JWT_SECRET")
 		return "", usecase.ErrJWTSecretUnset
+	default:
+		os.Setenv("JWT_SECRET", "test-secret")
+		return "dummytoken", nil
 	}
-	os.Setenv("JWT_SECRET", "test-secret")
-	return "dummytoken", nil
 }
 
-func (d *DummyUserUsecase) GetUserByEmail(email string) (model.UserResponse, error) {
-	switch email {
-	case "notfound@example.com":
-		return model.UserResponse{}, usecase.ErrEmailNotFound
-	case "error@example.com":
-		return model.UserResponse{}, errors.New("something went wrong")
+func (d *DummyUserUsecase) GetUserById(id uint) (model.UserResponse, error) {
+	switch id {
+	case 42:
+		return model.UserResponse{ID: 42, Email: "me@example.com", Username: "meuser", Rank: "段位"}, nil
+	case 100:
+		return model.UserResponse{}, usecase.ErrUserNotFound
 	default:
-		return model.UserResponse{
-			ID:       42,
-			Email:    email,
-			Username: "user42",
-			Rank:     "未設定",
-		}, nil
+		return model.UserResponse{}, errors.New("db error")
 	}
+}
+
+// setupEcho は共通の Echo インスタンスとバリデータを返す
+func setupEcho() *echo.Echo {
+	e := echo.New()
+	e.Validator = &customValidator{validator: validator.New()}
+	return e
 }
 
 // --- SignUp ---
 func TestSignUp_InvalidInput(t *testing.T) {
-	e := echo.New()
-	e.Validator = &customValidator{validator: validator.New()}
+	e := setupEcho()
 	uc := controller.NewUserController(&DummyUserUsecase{})
 	e.POST("/signup", uc.SignUp)
 
-	body := dto.SignupRequest{
-		Email:    "",
-		Username: "testuser",
-		Password: "secret123",
-	}
+	body := dto.SignupRequest{Email: "", Username: "testuser", Password: "secret123"}
 	jsonBody, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/signup", bytes.NewReader(jsonBody))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -96,16 +90,11 @@ func TestSignUp_InvalidInput(t *testing.T) {
 }
 
 func TestSignUp_Success(t *testing.T) {
-	e := echo.New()
-	e.Validator = &customValidator{validator: validator.New()}
+	e := setupEcho()
 	uc := controller.NewUserController(&DummyUserUsecase{})
 	e.POST("/signup", uc.SignUp)
 
-	body := dto.SignupRequest{
-		Email:    "test@example.com",
-		Username: "testuser",
-		Password: "secret123",
-	}
+	body := dto.SignupRequest{Email: "test@example.com", Username: "testuser", Password: "secret123"}
 	jsonBody, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/signup", bytes.NewReader(jsonBody))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -119,16 +108,50 @@ func TestSignUp_Success(t *testing.T) {
 }
 
 // --- Login ---
-func TestLogin_InvalidInput(t *testing.T) {
-	e := echo.New()
-	e.Validator = &customValidator{validator: validator.New()}
+
+func TestLogin_Success(t *testing.T) {
+	e := setupEcho()
 	uc := controller.NewUserController(&DummyUserUsecase{})
 	e.POST("/login", uc.Login)
 
+	// DummyUserUsecase の Login では、Email != "no-user" && Password != "wrong" && Password != "no-secret" の場合
+	// os.Setenv("JWT_SECRET","test-secret") → "dummytoken" を返すようになっています
 	body := dto.LoginRequest{
-		Email:    "",
-		Password: "",
+		Email:    "test@example.com",
+		Password: "any-other-password",
 	}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(jsonBody))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	// 実行
+	if assert.NoError(t, uc.Login(c)) {
+		// ステータスとボディ
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.JSONEq(t, `{}`, rec.Body.String())
+
+		// Cookie がセットされているか
+		result := rec.Result()
+		cookies := result.Cookies()
+		assert.Len(t, cookies, 1)
+		cookie := cookies[0]
+		assert.Equal(t, "access_token", cookie.Name)
+		assert.Equal(t, "dummytoken", cookie.Value)
+
+		// HttpOnly / Path など属性もチェックしたければ追加で
+		assert.True(t, cookie.HttpOnly)
+		assert.Equal(t, "/", cookie.Path)
+	}
+}
+
+func TestLogin_InvalidInput(t *testing.T) {
+	e := setupEcho()
+	uc := controller.NewUserController(&DummyUserUsecase{})
+	e.POST("/login", uc.Login)
+
+	body := dto.LoginRequest{Email: "", Password: ""}
 	jsonBody, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(jsonBody))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -142,15 +165,11 @@ func TestLogin_InvalidInput(t *testing.T) {
 }
 
 func TestLogin_EmailNotFound(t *testing.T) {
-	e := echo.New()
-	e.Validator = &customValidator{validator: validator.New()}
+	e := setupEcho()
 	uc := controller.NewUserController(&DummyUserUsecase{})
 	e.POST("/login", uc.Login)
 
-	body := dto.LoginRequest{
-		Email:    "no-user@example.com",
-		Password: "password123",
-	}
+	body := dto.LoginRequest{Email: "no-user@example.com", Password: "password123"}
 	jsonBody, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(jsonBody))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -164,15 +183,11 @@ func TestLogin_EmailNotFound(t *testing.T) {
 }
 
 func TestLogin_InvalidPassword(t *testing.T) {
-	e := echo.New()
-	e.Validator = &customValidator{validator: validator.New()}
+	e := setupEcho()
 	uc := controller.NewUserController(&DummyUserUsecase{})
 	e.POST("/login", uc.Login)
 
-	body := dto.LoginRequest{
-		Email:    "test@example.com",
-		Password: "wrong",
-	}
+	body := dto.LoginRequest{Email: "test@example.com", Password: "wrong"}
 	jsonBody, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(jsonBody))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -186,15 +201,11 @@ func TestLogin_InvalidPassword(t *testing.T) {
 }
 
 func TestLogin_JWTSecretUnset(t *testing.T) {
-	e := echo.New()
-	e.Validator = &customValidator{validator: validator.New()}
+	e := setupEcho()
 	uc := controller.NewUserController(&DummyUserUsecase{})
 	e.POST("/login", uc.Login)
 
-	body := dto.LoginRequest{
-		Email:    "test@example.com",
-		Password: "no-secret",
-	}
+	body := dto.LoginRequest{Email: "test@example.com", Password: "no-secret"}
 	jsonBody, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(jsonBody))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -203,69 +214,52 @@ func TestLogin_JWTSecretUnset(t *testing.T) {
 
 	if assert.NoError(t, uc.Login(c)) {
 		assert.Equal(t, http.StatusInternalServerError, rec.Code)
-		assert.Contains(t, rec.Body.String(), "internal server error")
+		assert.Contains(t, rec.Body.String(), "jwt secret not set")
 	}
 }
 
-// --- GetUserByEmail ---
-
-// --- 成功ケース ---
-func TestGetUserByEmail_Success(t *testing.T) {
-	e := echo.New()
+// --- Me ---
+func TestMe_Success(t *testing.T) {
+	e := setupEcho()
 	uc := controller.NewUserController(&DummyUserUsecase{})
-	e.GET("/users/:email", uc.GetUserByEmail)
+	e.GET("/me", uc.Me)
 
-	req := httptest.NewRequest(http.MethodGet, "/users/test@example.com", nil)
+	req := httptest.NewRequest(http.MethodGet, "/me", nil)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
-	c.SetParamNames("email")
-	c.SetParamValues("test@example.com")
 
-	// ハンドラ実行
-	if assert.NoError(t, uc.GetUserByEmail(c)) {
+	// create token with sub=42
+	os.Setenv("JWT_SECRET", "test-secret")
+	claims := jwt.RegisteredClaims{Subject: "42", ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	c.Set("user", token)
+
+	if assert.NoError(t, uc.Me(c)) {
 		assert.Equal(t, http.StatusOK, rec.Code)
-
 		var resp model.UserResponse
 		err := json.Unmarshal(rec.Body.Bytes(), &resp)
 		assert.NoError(t, err)
-		assert.EqualValues(t, 42, resp.ID)
-		assert.Equal(t, "test@example.com", resp.Email)
-		assert.Equal(t, "user42", resp.Username)
+		assert.Equal(t, uint(42), resp.ID)
+		assert.Equal(t, "me@example.com", resp.Email)
 	}
 }
 
-// --- ユーザー未発見 (404) ケース ---
-func TestGetUserByEmail_NotFound(t *testing.T) {
-	e := echo.New()
+func TestMe_NotFound(t *testing.T) {
+	e := setupEcho()
 	uc := controller.NewUserController(&DummyUserUsecase{})
-	e.GET("/users/:email", uc.GetUserByEmail)
+	e.GET("/me", uc.Me)
 
-	req := httptest.NewRequest(http.MethodGet, "/users/notfound@example.com", nil)
+	req := httptest.NewRequest(http.MethodGet, "/me", nil)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
-	c.SetParamNames("email")
-	c.SetParamValues("notfound@example.com")
 
-	if assert.NoError(t, uc.GetUserByEmail(c)) {
+	claims := jwt.RegisteredClaims{Subject: "100", ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	c.Set("user", token)
+
+	if assert.NoError(t, uc.Me(c)) {
 		assert.Equal(t, http.StatusNotFound, rec.Code)
 		assert.Contains(t, rec.Body.String(), "user not found")
-	}
-}
-
-// --- 内部エラー (500) ケース ---
-func TestGetUserByEmail_InternalError(t *testing.T) {
-	e := echo.New()
-	uc := controller.NewUserController(&DummyUserUsecase{})
-	e.GET("/users/:email", uc.GetUserByEmail)
-
-	req := httptest.NewRequest(http.MethodGet, "/users/error@example.com", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
-	c.SetParamNames("email")
-	c.SetParamValues("error@example.com")
-
-	if assert.NoError(t, uc.GetUserByEmail(c)) {
-		assert.Equal(t, http.StatusInternalServerError, rec.Code)
-		assert.Contains(t, rec.Body.String(), "something went wrong")
 	}
 }
