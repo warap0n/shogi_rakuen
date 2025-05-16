@@ -111,12 +111,14 @@ func (uc *UserController) Me(c echo.Context) error {
 	// 1. JWT ミドルウェアでセットされたトークンを取得
 	token := c.Get("user").(*jwt.Token)
 
-	// 2. RegisteredClaims から Subject（sub）を取り出し、ユーザーID に変換
-	regClaims, ok := token.Claims.(jwt.RegisteredClaims)
+	mc, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid token claims"})
 	}
-	sub := regClaims.Subject
+	sub, ok := mc["sub"].(string)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid subject claim"})
+	}
 	userId, err := strconv.Atoi(sub)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid user id in token"})

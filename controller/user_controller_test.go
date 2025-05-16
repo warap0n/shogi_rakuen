@@ -13,7 +13,6 @@ import (
 	"shogi-rakuen/usecase"
 	"shogi-rakuen/usecase/input"
 	"testing"
-	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v5"
@@ -228,15 +227,17 @@ func TestMe_Success(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
-	// create token with sub=42
-	os.Setenv("JWT_SECRET", "test-secret")
-	claims := jwt.RegisteredClaims{Subject: "42", ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}
+	// 1) MapClaims で sub=42 のトークンを作成
+	claims := jwt.MapClaims{"sub": "42"}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
+	// 2) ミドルウェアの代わりに直接コンテキストにセット
 	c.Set("user", token)
 
+	// 3) ハンドラ実行＆検証
 	if assert.NoError(t, uc.Me(c)) {
 		assert.Equal(t, http.StatusOK, rec.Code)
+
 		var resp model.UserResponse
 		err := json.Unmarshal(rec.Body.Bytes(), &resp)
 		assert.NoError(t, err)
@@ -254,7 +255,8 @@ func TestMe_NotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
-	claims := jwt.RegisteredClaims{Subject: "100", ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}
+	// MapClaims で存在しない ID=100 のトークンを作成
+	claims := jwt.MapClaims{"sub": "100"}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	c.Set("user", token)
 
