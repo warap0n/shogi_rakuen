@@ -62,6 +62,17 @@ func (d *DummyUserUsecase) GetUserById(id uint) (model.UserResponse, error) {
 	}
 }
 
+// EmailExistsUsecase は SignUp 時に ErrEmailAlreadyExists を返すだけのモック
+type EmailExistsUsecase struct{}
+
+func (d *EmailExistsUsecase) SignUp(in input.SignupInput) (model.UserResponse, error) {
+	return model.UserResponse{}, usecase.ErrEmailAlreadyExists
+}
+func (d *EmailExistsUsecase) Login(in input.LoginInput) (string, error) { return "", nil }
+func (d *EmailExistsUsecase) GetUserById(id uint) (model.UserResponse, error) {
+	return model.UserResponse{}, nil
+}
+
 // setupEcho は共通の Echo インスタンスとバリデータを返す
 func setupEcho() *echo.Echo {
 	e := echo.New()
@@ -70,6 +81,44 @@ func setupEcho() *echo.Echo {
 }
 
 // --- SignUp ---
+
+func TestSignUp_BindError(t *testing.T) {
+	e := setupEcho()
+	uc := controller.NewUserController(&DummyUserUsecase{}) // バインドだけ失敗させる
+	e.POST("/signup", uc.SignUp)
+
+	// あえて JSON じゃない文字列を投げる
+	req := httptest.NewRequest(http.MethodPost, "/signup", bytes.NewReader([]byte("xxx")))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	assert.NoError(t, uc.SignUp(c))
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "invalid input")
+}
+
+func TestSignUp_EmailAlreadyExists(t *testing.T) {
+	e := setupEcho()
+	uc := controller.NewUserController(&EmailExistsUsecase{})
+	e.POST("/signup", uc.SignUp)
+
+	body := dto.SignupRequest{
+		Email:    "dup@example.com",
+		Username: "dup",
+		Password: "secret123",
+	}
+	b, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/signup", bytes.NewReader(b))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	assert.NoError(t, uc.SignUp(c))
+	assert.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "email already registered")
+}
+
 func TestSignUp_InvalidInput(t *testing.T) {
 	e := setupEcho()
 	uc := controller.NewUserController(&DummyUserUsecase{})
