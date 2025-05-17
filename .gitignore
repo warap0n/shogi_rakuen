@@ -1,5 +1,7 @@
 .env
 app.db
+coverage.html
+coverage.out
 
 main
 /docker

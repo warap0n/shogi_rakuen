@@ -1,20 +1,30 @@
 package model
 
-type PieceType string
+// Color は先手／後手を表します
+type Color int
 
 const (
-	Fu    PieceType = "FU"
-	Kyo   PieceType = "KYO"
-	Kei   PieceType = "KEI"
-	Gin   PieceType = "GIN"
-	Kin   PieceType = "KIN"
-	Kaku  PieceType = "KAKU"
-	Hisha PieceType = "HISHA"
-	Ou    PieceType = "OU"
+	Black Color = iota
+	White
 )
 
+// PieceType は駒の種類を表します
+type PieceType int
+
+const (
+	King PieceType = iota
+	Rook
+	Bishop
+	Gold
+	Silver
+	Knight
+	Lance
+	Pawn
+)
+
+// Piece は１枚の駒を表します
 type Piece struct {
-	Type       PieceType
-	IsPromoted bool
-	PlayerId   string
+	Type     PieceType // 種類
+	Color    Color     // 先手/後手
+	Promoted bool      // 成り駒かどうか
 }
