@@ -15,3 +15,9 @@ var ErrNoPieceToDrop = errors.New("no piece to drop")
 
 // 移動元に駒がない
 var ErrNoPieceAtSource = errors.New("no piece at source")
+
+var (
+	// 駒が成れない
+	ErrInvalidPromotionPiece = errors.New("piece cannot promote")
+	ErrInvalidPromotionZone  = errors.New("promotion not allowed outside promotion zone")
+)

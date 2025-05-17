@@ -33,24 +33,21 @@ func TestApplyMove_NormalMove(t *testing.T) {
 	assert.Len(t, g.Moves, 1)
 }
 
-func TestApplyMove_Promotion(t *testing.T) {
+func TestApplyMove_Promotion_Success(t *testing.T) {
 	g := NewGame()
-	g.Turn = White
-
-	m := Move{
-		From:    Position{Rank: 2, File: 0},
-		To:      Position{Rank: 3, File: 0},
-		Promote: true,
-		Drop:    false,
-	}
+	// 先手のプロモート成功例: Black のプロモゾーンは Rank<=2
+	// 先手 Pawn を敵陣(ランク2)から一つ進めてプロモート
+	from := Position{Rank: 2, File: 0} // プロモゾーン内
+	to := Position{Rank: 1, File: 0}   // プロモゾーン内
+	m := Move{From: from, To: to, Promote: true, Drop: false}
 
 	err := g.ApplyMove(m)
 	assert.NoError(t, err)
 
-	p, err := g.Board.PieceAt(m.To)
+	p, err := g.Board.PieceAt(to)
 	assert.NoError(t, err)
 	assert.NotNil(t, p)
-	assert.True(t, p.Promoted)
+	assert.True(t, p.Promoted, "プロモートフラグが立っていること")
 }
 
 func TestApplyMove_Capture(t *testing.T) {
@@ -90,6 +87,33 @@ func TestApplyMove_Drop(t *testing.T) {
 }
 
 // --- 異常系 ---
+
+func TestApplyMove_InvalidPromotionPiece(t *testing.T) {
+	g := NewGame()
+	// 金将(Gold)はそもそもプロモート不可
+	// まず盤上に金を適当な場所に置く
+	pos := Position{Rank: 2, File: 0}
+	g.Board.SetPiece(pos, &Piece{Type: Gold, Color: Black})
+
+	m := Move{From: pos, To: Position{Rank: 1, File: 0}, Promote: true, Drop: false}
+
+	err := g.ApplyMove(m)
+	assert.ErrorIs(t, err, ErrInvalidPromotionPiece)
+}
+
+func TestApplyMove_InvalidPromotionZone(t *testing.T) {
+	g := NewGame()
+	// Pawn を自陣 (プロモゾーン外) でプロモート宣言
+	from := Position{Rank: 4, File: 0}
+	to := Position{Rank: 3, File: 0}
+	// ここに Pawn をセット
+	g.Board.SetPiece(from, &Piece{Type: Pawn, Color: Black})
+
+	m := Move{From: from, To: to, Promote: true, Drop: false}
+
+	err := g.ApplyMove(m)
+	assert.ErrorIs(t, err, ErrInvalidPromotionZone)
+}
 
 func TestApplyMove_GameAlreadyFinished(t *testing.T) {
 	g := NewGame()

@@ -11,3 +11,13 @@ type Position struct {
 func (p Position) OnBoard() bool {
 	return p.File >= 0 && p.File <= 8 && p.Rank >= 0 && p.Rank <= 8
 }
+
+func (p Position) InPromotionZone(color Color) bool {
+	switch color {
+	case Black:
+		return p.Rank <= 2
+	case White:
+		return p.Rank >= 6
+	}
+	return false
+}

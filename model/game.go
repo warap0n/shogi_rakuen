@@ -70,7 +70,16 @@ func (g *Game) ApplyMove(m Move) error {
 	}
 
 	// 2) 成り処理
+
 	if m.Promote {
+		// 2-1) そもそもプロモート可能な駒か
+		if !p.Type.Promoteable() {
+			return ErrInvalidPromotionPiece
+		}
+		// 2-2) 移動元 or 移動先がプロモーションゾーンか
+		if !(m.From.InPromotionZone(g.Turn) || m.To.InPromotionZone(g.Turn)) {
+			return ErrInvalidPromotionZone
+		}
 		p.Promoted = true
 	}
 

@@ -28,3 +28,12 @@ type Piece struct {
 	Color    Color     // 先手/後手
 	Promoted bool      // 成り駒かどうか
 }
+
+func (pt PieceType) Promoteable() bool {
+	switch pt {
+	case Pawn, Lance, Knight, Silver, Bishop, Rook:
+		return true
+	default:
+		return false
+	}
+}
