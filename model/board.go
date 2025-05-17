@@ -2,7 +2,6 @@
 package model
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -10,8 +9,6 @@ import (
 type Board struct {
 	Squares [9][9]*Piece
 }
-
-var ErrOutOfBounds = errors.New("position out of board")
 
 // NewBoard は全駒の初期配置をセットする
 func NewBoard() *Board {

@@ -1,3 +1,4 @@
+// model/game.go
 package model
 
 import (
@@ -15,7 +16,6 @@ type Game struct {
 	Winner   Color
 }
 
-// NewGame は初期配置から始まる Game を返します
 func NewGame() *Game {
 	return &Game{
 		Board:    NewBoard(),
@@ -25,8 +25,9 @@ func NewGame() *Game {
 }
 
 func (g *Game) ApplyMove(m Move) error {
+	// 0) ゲーム終了後はエラー
 	if g.Finished {
-		return errors.New("game already finished")
+		return ErrGameAlreadyFinished
 	}
 
 	var p *Piece
@@ -35,13 +36,23 @@ func (g *Game) ApplyMove(m Move) error {
 	// 1) Drop（打ち）か移動か
 	if m.Drop {
 		pcs := g.Captured[g.Turn]
-		if len(pcs) == 0 {
-			return errors.New("no piece to drop")
+		// 1-1) DropPiece と一致する駒を手持ちから探す
+		idx := -1
+		for i, cp := range pcs {
+			if cp.Type == m.DropPiece {
+				idx = i
+				break
+			}
 		}
-		p = pcs[len(pcs)-1]
-		g.Captured[g.Turn] = pcs[:len(pcs)-1]
+		if idx < 0 {
+			return ErrNoPieceToDrop
+		}
+		// 1-2) その駒を取り出し、手持ちから除去
+		p = pcs[idx]
+		g.Captured[g.Turn] = append(pcs[:idx], pcs[idx+1:]...)
+
 	} else {
-		// 移動元の駒を取得
+		// 1') 移動元の駒を取得
 		p, err = g.Board.PieceAt(m.From)
 		if errors.Is(err, ErrOutOfBounds) {
 			return fmt.Errorf("source %v: %w", m.From, ErrOutOfBounds)
@@ -50,10 +61,9 @@ func (g *Game) ApplyMove(m Move) error {
 			return err
 		}
 		if p == nil {
-			return errors.New("no piece at source")
+			return ErrNoPieceAtSource
 		}
-
-		// 移動元を空にする
+		// 1'') 移動元を空に
 		if err := g.Board.SetPiece(m.From, nil); err != nil {
 			return err
 		}
@@ -64,7 +74,7 @@ func (g *Game) ApplyMove(m Move) error {
 		p.Promoted = true
 	}
 
-	// 3) 移動先にいる駒を取得
+	// 3) 移動先の駒を取得
 	captured, err := g.Board.PieceAt(m.To)
 	if errors.Is(err, ErrOutOfBounds) {
 		return fmt.Errorf("destination %v: %w", m.To, ErrOutOfBounds)
@@ -72,19 +82,18 @@ func (g *Game) ApplyMove(m Move) error {
 	if err != nil {
 		return err
 	}
-
-	// 取った駒は持ち駒に追加（成り戻し）
+	// 3') 取った駒は持ち駒に追加（成り戻し）
 	if captured != nil {
 		captured.Promoted = false
 		g.Captured[g.Turn] = append(g.Captured[g.Turn], captured)
 	}
 
-	// 駒を置く
+	// 4) 駒を置く
 	if err := g.Board.SetPiece(m.To, p); err != nil {
 		return err
 	}
 
-	// 4) ターン切り替え・履歴追加
+	// 5) ターン切り替え・履歴追加
 	g.Turn = 1 - g.Turn
 	g.Moves = append(g.Moves, m)
 
