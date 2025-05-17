@@ -1,26 +1,26 @@
 package repository_test
 
 import (
-	"testing"
-
 	"shogi-rakuen/model"
 	"shogi-rakuen/repository"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func TestUserRepository_Create(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	sqlDB, err := db.DB()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer sqlDB.Close()
 
 	err = db.AutoMigrate(&model.User{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	repo := repository.NewUserRepository(db)
 
@@ -31,21 +31,21 @@ func TestUserRepository_Create(t *testing.T) {
 	}
 
 	created, err := repo.Create(user)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotZero(t, created.ID)
 	assert.Equal(t, "test@example.com", created.Email)
 }
 
 func TestUserRepository_Create_DuplicateEmail(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	sqlDB, err := db.DB()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer sqlDB.Close()
 
 	err = db.AutoMigrate(&model.User{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	repo := repository.NewUserRepository(db)
 
@@ -56,11 +56,11 @@ func TestUserRepository_Create_DuplicateEmail(t *testing.T) {
 		Password: "pass1",
 	}
 	_, err = repo.Create(user1)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// 同じメールアドレスで2人目のユーザーを作成
 	user2 := &model.User{
-		Email:    "duplicate@example.com", // 同じメール
+		Email:    "duplicate@example.com",
 		Username: "user2",
 		Password: "pass2",
 	}
@@ -70,16 +70,61 @@ func TestUserRepository_Create_DuplicateEmail(t *testing.T) {
 	assert.ErrorIs(t, err, repository.ErrEmailAlreadyExists)
 }
 
-func TestUserRepository_GetUserByEmail(t *testing.T) {
+func TestUserRepository_GetUserById_Success(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	sqlDB, err := db.DB()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer sqlDB.Close()
 
-	err = db.AutoMigrate(&model.User{})
+	require.NoError(t, db.AutoMigrate(&model.User{}))
+
+	repo := repository.NewUserRepository(db)
+
+	// ユーザー作成
+	u := &model.User{
+		Email:    "foo@example.com",
+		Username: "foo",
+		Password: "pw",
+	}
+	created, err := repo.Create(u)
+	require.NoError(t, err)
+	require.NotZero(t, created.ID)
+
+	// ID で取得
+	found, err := repo.GetUserById(created.ID)
 	assert.NoError(t, err)
+	assert.Equal(t, created.Email, found.Email)
+	assert.Equal(t, created.Username, found.Username)
+}
+
+func TestUserRepository_GetUserById_NotFound(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	defer sqlDB.Close()
+
+	require.NoError(t, db.AutoMigrate(&model.User{}))
+
+	repo := repository.NewUserRepository(db)
+
+	// 存在しない ID を指定
+	_, err = repo.GetUserById(999)
+	assert.ErrorIs(t, err, repository.ErrUserNotFound)
+}
+
+func TestUserRepository_GetUserByEmail(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	defer sqlDB.Close()
+
+	require.NoError(t, db.AutoMigrate(&model.User{}))
 
 	repo := repository.NewUserRepository(db)
 
@@ -90,7 +135,7 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 		Password: "hashed123",
 	}
 	_, err = repo.Create(user)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// 実際に GetUserByEmail を使う
 	found, err := repo.GetUserByEmail("test@example.com")
@@ -101,14 +146,13 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 
 func TestUserRepository_GetUserByEmail_NotFound(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	sqlDB, err := db.DB()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer sqlDB.Close()
 
-	err = db.AutoMigrate(&model.User{})
-	assert.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.User{}))
 
 	repo := repository.NewUserRepository(db)
 
