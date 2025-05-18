@@ -53,9 +53,24 @@ func (p *Piece) ValidMove(from, to Position, b *Board) bool {
 	if from == to {
 		return false
 	}
-	// 3) 成り後のルール：プロモート済みなら金将と同じ動き
+	// 3) 成り駒の動きを種別ごとにハンドリング
 	if p.Promoted {
-		return validGold(p.Color, from, to)
+		switch p.Type {
+		case Pawn, Lance, Knight, Silver:
+			// 成歩・成香・成桂・成銀 は金将と同じ
+			return validGold(p.Color, from, to)
+		case Bishop:
+			// 馬：角の動き + 周囲１マス（王の動き）
+			return validBishop(from, to, b) ||
+				validKing(from, to)
+		case Rook:
+			// 龍：飛車の動き + 周囲１マス（王の動き）
+			return validRook(from, to, b) ||
+				validKing(from, to)
+		default:
+			// Gold／King はそもそも成らないはずなので false
+			return false
+		}
 	}
 	// 4) 非プロモート駒の動き
 	switch p.Type {
