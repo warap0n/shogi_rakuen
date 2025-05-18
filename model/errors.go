@@ -20,4 +20,8 @@ var (
 	ErrInvalidPromotionZone = errors.New("promotion not allowed outside promotion zone")
 	// 味方の駒を取ろうとした
 	ErrCannotCaptureOwnPiece = errors.New("cannot capture own piece")
+	// PlayerID が空
+	ErrInvalidPlayerID = errors.New("player ID must be non-empty")
+	// PlayerID が同じ
+	ErrSamePlayer = errors.New("black and white player must differ")
 )
