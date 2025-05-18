@@ -127,7 +127,7 @@ func validLance(color Color, f, t Position, b *Board) bool {
 	}
 	// 中間マスに駒がないか
 	for r := f.Rank + step; r != t.Rank; r += step {
-		if piece, _ := b.PieceAt(Position{File: f.File, Rank: r}); piece != nil {
+		if piece, _ := b.PieceAt(Position{Rank: r, File: f.File}); piece != nil {
 			return false
 		}
 	}
@@ -230,7 +230,7 @@ func validBishop(f, t Position, b *Board) bool {
 	}
 	// 中間経路チェック
 	for r, c := f.Rank+stepR, f.File+stepF; r != t.Rank; r, c = r+stepR, c+stepF {
-		if piece, _ := b.PieceAt(Position{File: c, Rank: r}); piece != nil {
+		if piece, _ := b.PieceAt(Position{Rank: r, File: c}); piece != nil {
 			return false
 		}
 	}
@@ -266,7 +266,7 @@ func validRook(f, t Position, b *Board) bool {
 	}
 	// 中間経路チェック
 	for r, c := f.Rank+stepR, f.File+stepF; r != t.Rank || c != t.File; r, c = r+stepR, c+stepF {
-		if piece, _ := b.PieceAt(Position{File: c, Rank: r}); piece != nil {
+		if piece, _ := b.PieceAt(Position{Rank: r, File: c}); piece != nil {
 			return false
 		}
 	}
