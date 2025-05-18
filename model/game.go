@@ -73,7 +73,7 @@ func (g *Game) ApplyMove(m Move) error {
 
 	if m.Promote {
 		// 2-1) そもそもプロモート可能な駒か
-		if !p.Type.Promoteable() {
+		if !p.Type.Promotable() {
 			return ErrInvalidPromotionPiece
 		}
 		// 2-2) 移動元 or 移動先がプロモーションゾーンか
