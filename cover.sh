@@ -6,6 +6,7 @@ choices=(
   "controller"
   "repository"
   "usecase"
+  "model"
   "all"
   "exit"
 )
@@ -25,6 +26,10 @@ select choice in "${choices[@]}"; do
       ;;
     usecase)
       pkgs="./usecase"
+      break
+      ;;
+    model)
+      pkgs="./model"
       break
       ;;
     all)
