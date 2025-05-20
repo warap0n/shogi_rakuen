@@ -32,7 +32,14 @@ func (u *GameUsecase) StartGame(in input.StartGameInput) (*model.Game, error) {
 	// ドメインモデルでプレイヤー検証
 	g, err := model.NewGameWithPlayers(in.BlackID, in.WhiteID)
 	if err != nil {
-		return nil, err
+		switch {
+		case errors.Is(err, model.ErrInvalidPlayerID):
+			return nil, ErrInvalidPlayerID
+		case errors.Is(err, model.ErrSamePlayer):
+			return nil, ErrSamePlayer
+		default:
+			return nil, err
+		}
 	}
 	// ユースケース層で一意の ID を付与
 	g.ID = uuid.NewString()
@@ -64,8 +71,9 @@ func (u *GameUsecase) ApplyMove(in input.ApplyMoveInput) (*model.Game, error) {
 		DropPiece: in.DropPiece,
 	}
 	if err := g.ApplyMove(m); err != nil {
-		// ドメインエラーを一律「不正な一手」にマッピング
 		switch {
+		case errors.Is(err, model.ErrGameAlreadyFinished):
+			return nil, ErrGameAlreadyFinished
 		case errors.Is(err, model.ErrNoPieceAtSource),
 			errors.Is(err, model.ErrOutOfBounds),
 			errors.Is(err, model.ErrNoPieceToDrop),
@@ -73,6 +81,7 @@ func (u *GameUsecase) ApplyMove(in input.ApplyMoveInput) (*model.Game, error) {
 			errors.Is(err, model.ErrInvalidPromotionZone):
 			return nil, ErrInvalidMove
 		default:
+			// 想定外のエラーはそのまま返す
 			return nil, err
 		}
 	}

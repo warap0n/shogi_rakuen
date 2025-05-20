@@ -45,14 +45,11 @@ func TestStartGame_Success(t *testing.T) {
 	g, err := uc.StartGame(in)
 	assert.NoError(t, err)
 
-	// Save に渡された値が repo.saved に入っている
 	saved := repo.saved
 	assert.NotNil(t, saved)
 	assert.Equal(t, "alice", saved.PlayerBlackID)
 	assert.Equal(t, "bob", saved.PlayerWhiteID)
 	assert.NotEmpty(t, saved.ID)
-
-	// ユースケースの戻り値も同一ポインタ
 	assert.Same(t, saved, g)
 }
 
@@ -60,13 +57,20 @@ func TestStartGame_InvalidPlayers(t *testing.T) {
 	repo := NewFakeGameRepo()
 	uc := usecase.NewGameUsecase(repo)
 
-	// 同じ ID
-	_, err := uc.StartGame(input.StartGameInput{BlackID: "x", WhiteID: "x"})
-	assert.Error(t, err)
+	t.Run("same player", func(t *testing.T) {
+		_, err := uc.StartGame(input.StartGameInput{BlackID: "x", WhiteID: "x"})
+		assert.ErrorIs(t, err, usecase.ErrSamePlayer)
+	})
 
-	// 空文字
-	_, err = uc.StartGame(input.StartGameInput{BlackID: "", WhiteID: "y"})
-	assert.Error(t, err)
+	t.Run("empty black ID", func(t *testing.T) {
+		_, err := uc.StartGame(input.StartGameInput{BlackID: "", WhiteID: "y"})
+		assert.ErrorIs(t, err, usecase.ErrInvalidPlayerID)
+	})
+
+	t.Run("empty white ID", func(t *testing.T) {
+		_, err := uc.StartGame(input.StartGameInput{BlackID: "x", WhiteID: ""})
+		assert.ErrorIs(t, err, usecase.ErrInvalidPlayerID)
+	})
 }
 
 // --- GetGameByID ---
@@ -99,7 +103,6 @@ func TestApplyMove_Success(t *testing.T) {
 	uc := usecase.NewGameUsecase(repo)
 
 	id := uuid.NewString()
-	// 初期ゲームを repo に登録
 	g0 := model.NewGame()
 	g0.ID = id
 	repo.store[id] = g0
@@ -115,12 +118,8 @@ func TestApplyMove_Success(t *testing.T) {
 
 	g1, err := uc.ApplyMove(in)
 	assert.NoError(t, err)
-
-	// 1手指されていること
 	assert.Len(t, g1.Moves, 1)
-	// ターンが切り替わっていること
 	assert.Equal(t, model.White, g1.Turn)
-	// リポジトリに保存されたのは同一オブジェクト
 	assert.Same(t, repo.saved, g1)
 }
 
@@ -128,8 +127,7 @@ func TestApplyMove_GameNotFound(t *testing.T) {
 	repo := NewFakeGameRepo()
 	uc := usecase.NewGameUsecase(repo)
 
-	in := input.ApplyMoveInput{GameID: "missing"}
-	_, err := uc.ApplyMove(in)
+	_, err := uc.ApplyMove(input.ApplyMoveInput{GameID: "missing"})
 	assert.ErrorIs(t, err, usecase.ErrGameNotFound)
 }
 
@@ -137,13 +135,11 @@ func TestApplyMove_DomainError(t *testing.T) {
 	repo := NewFakeGameRepo()
 	uc := usecase.NewGameUsecase(repo)
 
-	// まずゲームを作成してリポジトリに登録
 	id := uuid.NewString()
 	g0 := model.NewGame()
 	g0.ID = id
 	repo.store[id] = g0
 
-	// 空マスから移動しようとして model.ErrNoPieceAtSource を返す
 	in := input.ApplyMoveInput{
 		GameID: id,
 		From:   model.Position{Rank: 5, File: 5},
@@ -151,8 +147,30 @@ func TestApplyMove_DomainError(t *testing.T) {
 	}
 
 	_, err := uc.ApplyMove(in)
-	// ここではユースケース層で ErrInvalidMove にマッピングされているはず
 	assert.ErrorIs(t, err, usecase.ErrInvalidMove)
+}
+
+func TestApplyMove_AlreadyFinished(t *testing.T) {
+	repo := NewFakeGameRepo()
+	uc := usecase.NewGameUsecase(repo)
+
+	id := uuid.NewString()
+	g0 := model.NewGame()
+	g0.ID = id
+	g0.Finished = true
+	repo.store[id] = g0
+
+	in := input.ApplyMoveInput{
+		GameID:    id,
+		From:      model.Position{Rank: 6, File: 0},
+		To:        model.Position{Rank: 5, File: 0},
+		Promote:   false,
+		Drop:      false,
+		DropPiece: model.Pawn,
+	}
+
+	_, err := uc.ApplyMove(in)
+	assert.ErrorIs(t, err, usecase.ErrGameAlreadyFinished)
 }
 
 // --- ListMoves ---
