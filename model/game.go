@@ -8,6 +8,7 @@ import (
 
 // Game は１局の対局を管理します
 type Game struct {
+	ID            string
 	Board         *Board
 	Turn          Color
 	Moves         []Move
