@@ -8,20 +8,37 @@ import (
 
 // Game は１局の対局を管理します
 type Game struct {
-	Board    *Board
-	Turn     Color
-	Moves    []Move
-	Captured map[Color][]*Piece // 先手／後手の持ち駒
-	Finished bool
-	Winner   Color
+	Board         *Board
+	Turn          Color
+	Moves         []Move
+	Captured      map[Color][]*Piece // 先手／後手の持ち駒
+	Finished      bool
+	Winner        Color
+	PlayerBlackID string
+	PlayerWhiteID string
 }
 
+// 盤面のみの初期化
 func NewGame() *Game {
 	return &Game{
 		Board:    NewBoard(),
 		Turn:     Black,
 		Captured: map[Color][]*Piece{Black: {}, White: {}},
 	}
+}
+
+// 先手・後手の PlayerID を指定して盤面を初期化
+func NewGameWithPlayers(blackID, whiteID string) (*Game, error) {
+	if blackID == "" || whiteID == "" {
+		return nil, ErrInvalidPlayerID
+	}
+	if blackID == whiteID {
+		return nil, ErrSamePlayer
+	}
+	g := NewGame()
+	g.PlayerBlackID = blackID
+	g.PlayerWhiteID = whiteID
+	return g, nil
 }
 
 func (g *Game) ApplyMove(m Move) error {

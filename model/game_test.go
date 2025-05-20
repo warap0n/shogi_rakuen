@@ -7,6 +7,19 @@ import (
 )
 
 // --- 正常系 ---
+func TestNewGameWithPlayers_Success(t *testing.T) {
+	blackID := "alice"
+	whiteID := "bob"
+
+	g, err := NewGameWithPlayers(blackID, whiteID)
+	assert.NoError(t, err)
+	assert.NotNil(t, g)
+
+	// プレイヤーID が設定されていること
+	assert.Equal(t, blackID, g.PlayerBlackID)
+	assert.Equal(t, whiteID, g.PlayerWhiteID)
+
+}
 
 func TestApplyMove_NormalMove(t *testing.T) {
 	g := NewGame()
@@ -87,6 +100,24 @@ func TestApplyMove_Drop(t *testing.T) {
 }
 
 // --- 異常系 ---
+
+func TestNewGameWithPlayers_InvalidPlayerID(t *testing.T) {
+	// どちらかが空文字なら ErrInvalidPlayerID
+	_, err := NewGameWithPlayers("", "bob")
+	assert.ErrorIs(t, err, ErrInvalidPlayerID)
+
+	_, err = NewGameWithPlayers("alice", "")
+	assert.ErrorIs(t, err, ErrInvalidPlayerID)
+
+	_, err = NewGameWithPlayers("", "")
+	assert.ErrorIs(t, err, ErrInvalidPlayerID)
+}
+
+func TestNewGameWithPlayers_SamePlayer(t *testing.T) {
+	// 同じIDを渡すと ErrSamePlayer
+	_, err := NewGameWithPlayers("alice", "alice")
+	assert.ErrorIs(t, err, ErrSamePlayer)
+}
 
 func TestApplyMove_InvalidPromotionPiece(t *testing.T) {
 	g := NewGame()

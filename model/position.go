@@ -15,9 +15,9 @@ func (p Position) OnBoard() bool {
 func (p Position) InPromotionZone(color Color) bool {
 	switch color {
 	case Black:
-		return p.Rank <= 2
+		return p.Rank >= 0 && p.Rank <= 2
 	case White:
-		return p.Rank >= 6
+		return p.Rank >= 6 && p.Rank <= 8
 	}
 	return false
 }
