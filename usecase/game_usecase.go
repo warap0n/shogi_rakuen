@@ -28,7 +28,7 @@ func NewGameUsecase(gr repository.IGameRepository) IGameUsecase {
 	return &GameUsecase{gr: gr}
 }
 
-func (u *GameUsecase) StartGame(in input.StartGameInput) (*model.Game, error) {
+func (gu *GameUsecase) StartGame(in input.StartGameInput) (*model.Game, error) {
 	// ドメインモデルでプレイヤー検証
 	g, err := model.NewGameWithPlayers(in.BlackID, in.WhiteID)
 	if err != nil {
@@ -45,20 +45,20 @@ func (u *GameUsecase) StartGame(in input.StartGameInput) (*model.Game, error) {
 	g.ID = uuid.NewString()
 
 	// 永続化
-	return u.gr.Save(g)
+	return gu.gr.Save(g)
 }
 
-func (u *GameUsecase) GetGameByID(id string) (*model.Game, error) {
-	g, err := u.gr.FindByID(id)
+func (gu *GameUsecase) GetGameByID(id string) (*model.Game, error) {
+	g, err := gu.gr.FindByID(id)
 	if err != nil {
 		return nil, ErrGameNotFound
 	}
 	return g, nil
 }
 
-func (u *GameUsecase) ApplyMove(in input.ApplyMoveInput) (*model.Game, error) {
+func (gu *GameUsecase) ApplyMove(in input.ApplyMoveInput) (*model.Game, error) {
 	// 1) 既存対局を取得
-	g, err := u.gr.FindByID(in.GameID)
+	g, err := gu.gr.FindByID(in.GameID)
 	if err != nil {
 		return nil, ErrGameNotFound
 	}
@@ -86,14 +86,14 @@ func (u *GameUsecase) ApplyMove(in input.ApplyMoveInput) (*model.Game, error) {
 		}
 	}
 	// 3) 更新を保存
-	if _, err := u.gr.Save(g); err != nil {
+	if _, err := gu.gr.Save(g); err != nil {
 		return nil, err
 	}
 	return g, nil
 }
 
-func (u *GameUsecase) ListMoves(id string) ([]model.Move, error) {
-	g, err := u.gr.FindByID(id)
+func (gu *GameUsecase) ListMoves(id string) ([]model.Move, error) {
+	g, err := gu.gr.FindByID(id)
 	if err != nil {
 		return nil, ErrGameNotFound
 	}
