@@ -73,7 +73,7 @@ func (uc *UserController) Login(c echo.Context) error {
 		Email:    req.Email,
 		Password: req.Password,
 	}
-	token, err := uc.uu.Login(input)
+	loginResp, err := uc.uu.Login(input)
 	if err != nil {
 		switch {
 		case errors.Is(err, usecase.ErrEmailNotFound):
@@ -90,7 +90,7 @@ func (uc *UserController) Login(c echo.Context) error {
 	// Cookie にセット
 	cookie := new(http.Cookie)
 	cookie.Name = "access_token"
-	cookie.Value = token
+	cookie.Value = loginResp.Token
 	cookie.Path = "/"
 	cookie.Domain = os.Getenv("API_DOMAIN")
 	cookie.Expires = time.Now().Add(24 * time.Hour)
