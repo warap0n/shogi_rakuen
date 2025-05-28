@@ -7,6 +7,7 @@ import (
 	"shogi-rakuen/model"
 	"shogi-rakuen/repository"
 	"shogi-rakuen/usecase/input"
+	"shogi-rakuen/usecase/output"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -14,9 +15,9 @@ import (
 )
 
 type IUserUsecase interface {
-	SignUp(input input.SignupInput) (model.UserResponse, error)
-	Login(input input.LoginInput) (string, error)
-	GetUserById(id uint) (model.UserResponse, error)
+	SignUp(input input.SignupInput) (output.SignupOutput, error)
+	Login(input input.LoginInput) (output.LoginOutput, error)
+	GetUserById(id uint) (output.GetUserByIdOutput, error)
 }
 
 type UserUsecase struct {
@@ -27,10 +28,10 @@ func NewUserUsecase(ur repository.IUserRepository) IUserUsecase {
 	return &UserUsecase{ur: ur}
 }
 
-func (uu *UserUsecase) SignUp(input input.SignupInput) (model.UserResponse, error) {
+func (uu *UserUsecase) SignUp(input input.SignupInput) (output.SignupOutput, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return model.UserResponse{}, err
+		return output.SignupOutput{}, err
 	}
 
 	newUser := &model.User{
@@ -42,27 +43,28 @@ func (uu *UserUsecase) SignUp(input input.SignupInput) (model.UserResponse, erro
 	createdUser, err := uu.ur.Create(newUser)
 	if err != nil {
 		if errors.Is(err, repository.ErrEmailAlreadyExists) {
-			return model.UserResponse{}, ErrEmailAlreadyExists
+			return output.SignupOutput{}, ErrEmailAlreadyExists
 		}
-		return model.UserResponse{}, err
+		return output.SignupOutput{}, err
 	}
 
-	return model.UserResponse{
-		ID:       createdUser.ID,
-		Email:    createdUser.Email,
-		Username: createdUser.Username,
-		Rank:     createdUser.Rank,
+	return output.SignupOutput{
+		ID:        createdUser.ID,
+		Email:     createdUser.Email,
+		Username:  createdUser.Username,
+		RankType:  createdUser.RankType,
+		RankLevel: createdUser.RankLevel,
 	}, nil
 }
 
-func (uu *UserUsecase) Login(input input.LoginInput) (string, error) {
+func (uu *UserUsecase) Login(input input.LoginInput) (output.LoginOutput, error) {
 	storedUser, err := uu.ur.GetUserByEmail(input.Email)
 	if err != nil {
-		return "", ErrEmailNotFound
+		return output.LoginOutput{}, ErrEmailNotFound
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(storedUser.Password), []byte(input.Password)); err != nil {
-		return "", ErrInvalidPassword
+		return output.LoginOutput{}, ErrInvalidPassword
 	}
 
 	claims := jwt.RegisteredClaims{
@@ -73,31 +75,32 @@ func (uu *UserUsecase) Login(input input.LoginInput) (string, error) {
 
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		return "", ErrJWTSecretUnset
+		return output.LoginOutput{}, ErrJWTSecretUnset
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signedToken, err := token.SignedString([]byte(secret))
 	if err != nil {
-		return "", err
+		return output.LoginOutput{}, err
 	}
 
-	return signedToken, nil
+	return output.LoginOutput{Token: signedToken}, nil
 }
 
-func (uu *UserUsecase) GetUserById(id uint) (model.UserResponse, error) {
+func (uu *UserUsecase) GetUserById(id uint) (output.GetUserByIdOutput, error) {
 	user, err := uu.ur.GetUserById(id)
 	if errors.Is(err, repository.ErrUserNotFound) {
-		return model.UserResponse{}, ErrUserNotFound
+		return output.GetUserByIdOutput{}, ErrUserNotFound
 	}
 	if err != nil {
-		return model.UserResponse{}, err
+		return output.GetUserByIdOutput{}, err
 	}
 
-	return model.UserResponse{
-		ID:       user.ID,
-		Email:    user.Email,
-		Username: user.Username,
-		Rank:     user.Rank,
+	return output.GetUserByIdOutput{
+		ID:        user.ID,
+		Email:     user.Email,
+		Username:  user.Username,
+		RankType:  user.RankType,
+		RankLevel: user.RankLevel,
 	}, nil
 }
