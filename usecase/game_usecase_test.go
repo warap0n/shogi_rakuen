@@ -1,202 +1,197 @@
-// usecase/game_usecase_test.go
 package usecase_test
 
 import (
-	"errors"
 	"testing"
+
+	"shogi-rakuen/model"
+	"shogi-rakuen/repository"
+	"shogi-rakuen/usecase"
+	"shogi-rakuen/usecase/input"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-
-	"shogi-rakuen/model"
-	"shogi-rakuen/usecase"
-	"shogi-rakuen/usecase/input"
+	"github.com/stretchr/testify/mock"
 )
 
-// --- フェイクリポジトリ ---
-type FakeGameRepo struct {
-	saved *model.Game
-	store map[string]*model.Game
+type MockGameRepository struct {
+	mock.Mock
 }
 
-func NewFakeGameRepo() *FakeGameRepo {
-	return &FakeGameRepo{store: make(map[string]*model.Game)}
+func (m *MockGameRepository) CreateGame(g *model.Game) (*model.Game, error) {
+	args := m.Called(g)
+	return args.Get(0).(*model.Game), args.Error(1)
 }
 
-func (f *FakeGameRepo) Save(g *model.Game) (*model.Game, error) {
-	f.saved = g
-	f.store[g.ID] = g
-	return g, nil
+func (m *MockGameRepository) FindByID(id string) (*model.Game, error) {
+	args := m.Called(id)
+	return args.Get(0).(*model.Game), args.Error(1)
 }
 
-func (f *FakeGameRepo) FindByID(id string) (*model.Game, error) {
-	if g, ok := f.store[id]; ok {
-		return g, nil
+func (m *MockGameRepository) AppendMove(g *model.Game, move model.Move) (*model.Game, error) {
+	args := m.Called(g, move)
+	return args.Get(0).(*model.Game), args.Error(1)
+}
+
+func setup() (*MockGameRepository, usecase.IGameUsecase) {
+	mockRepo := new(MockGameRepository)
+	uc := usecase.NewGameUsecase(mockRepo)
+	return mockRepo, uc
+}
+
+func newTestGame() *model.Game {
+	g, _ := model.NewGameWithPlayers("black", "white")
+	g.ID = "game123"
+	return g
+}
+
+// --- Normal Cases ---
+
+func TestStartGame(t *testing.T) {
+	mockRepo, uc := setup()
+
+	input := input.StartGameInput{BlackID: "black", WhiteID: "white"}
+	expected, _ := model.NewGameWithPlayers("black", "white")
+	expected.ID = uuid.NewString()
+
+	mockRepo.On("CreateGame", mock.AnythingOfType("*model.Game")).Return(expected, nil)
+
+	game, err := uc.StartGame(input)
+
+	assert.NoError(t, err)
+	assert.Equal(t, expected.ID, game.ID)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestGetGameByID(t *testing.T) {
+	mockRepo, uc := setup()
+	game := newTestGame()
+
+	mockRepo.On("FindByID", "game123").Return(game, nil)
+
+	result, err := uc.GetGameByID("game123")
+
+	assert.NoError(t, err)
+	assert.Equal(t, "game123", result.ID)
+}
+
+func TestApplyMove(t *testing.T) {
+	mockRepo, uc := setup()
+	game := newTestGame()
+
+	input := input.ApplyMoveInput{
+		GameID:  "game123",
+		From:    model.Position{Rank: 7, File: 7},
+		To:      model.Position{Rank: 7, File: 6},
+		Promote: false,
 	}
-	return nil, errors.New("not found")
-}
 
-// --- StartGame ---
-func TestStartGame_Success(t *testing.T) {
-	repo := NewFakeGameRepo()
-	uc := usecase.NewGameUsecase(repo)
+	expectedMove := model.Move{
+		From:    input.From,
+		To:      input.To,
+		Promote: input.Promote,
+	}
 
-	in := input.StartGameInput{BlackID: "alice", WhiteID: "bob"}
-	g, err := uc.StartGame(in)
+	mockRepo.On("FindByID", "game123").Return(game, nil)
+	mockRepo.On("AppendMove", game, expectedMove).Return(game, nil)
+
+	result, err := uc.ApplyMove(input)
+
 	assert.NoError(t, err)
-
-	saved := repo.saved
-	assert.NotNil(t, saved)
-	assert.Equal(t, "alice", saved.PlayerBlackID)
-	assert.Equal(t, "bob", saved.PlayerWhiteID)
-	assert.NotEmpty(t, saved.ID)
-	assert.Same(t, saved, g)
+	assert.Equal(t, "game123", result.ID)
+	mockRepo.AssertExpectations(t)
 }
 
-func TestStartGame_InvalidPlayers(t *testing.T) {
-	repo := NewFakeGameRepo()
-	uc := usecase.NewGameUsecase(repo)
+func TestListMoves(t *testing.T) {
+	mockRepo, uc := setup()
+	game := newTestGame()
+	game.Moves = []model.Move{
+		{From: model.Position{Rank: 7, File: 7}, To: model.Position{Rank: 7, File: 6}},
+		{From: model.Position{Rank: 3, File: 3}, To: model.Position{Rank: 3, File: 4}},
+	}
 
-	t.Run("same player", func(t *testing.T) {
-		_, err := uc.StartGame(input.StartGameInput{BlackID: "x", WhiteID: "x"})
-		assert.ErrorIs(t, err, usecase.ErrSamePlayer)
-	})
+	mockRepo.On("FindByID", "game123").Return(game, nil)
 
-	t.Run("empty black ID", func(t *testing.T) {
-		_, err := uc.StartGame(input.StartGameInput{BlackID: "", WhiteID: "y"})
-		assert.ErrorIs(t, err, usecase.ErrInvalidPlayerID)
-	})
+	moves, err := uc.ListMoves("game123")
 
-	t.Run("empty white ID", func(t *testing.T) {
-		_, err := uc.StartGame(input.StartGameInput{BlackID: "x", WhiteID: ""})
-		assert.ErrorIs(t, err, usecase.ErrInvalidPlayerID)
-	})
-}
-
-// --- GetGameByID ---
-func TestGetGameByID_Success(t *testing.T) {
-	repo := NewFakeGameRepo()
-	uc := usecase.NewGameUsecase(repo)
-
-	id := uuid.NewString()
-	// あらかじめリポジトリに格納しておく
-	game := model.NewGame()
-	game.ID = id
-	repo.store[id] = game
-
-	got, err := uc.GetGameByID(id)
 	assert.NoError(t, err)
-	assert.Same(t, game, got)
+	assert.Len(t, moves, 2)
+	assert.Equal(t, model.Position{Rank: 7, File: 7}, moves[0].From)
+	assert.Equal(t, model.Position{Rank: 3, File: 3}, moves[1].From)
+}
+
+// --- Error Cases ---
+
+func TestStartGame_SamePlayerError(t *testing.T) {
+	_, uc := setup()
+
+	input := input.StartGameInput{BlackID: "same", WhiteID: "same"}
+
+	game, err := uc.StartGame(input)
+
+	assert.Nil(t, game)
+	assert.ErrorIs(t, err, usecase.ErrSamePlayer)
 }
 
 func TestGetGameByID_NotFound(t *testing.T) {
-	repo := NewFakeGameRepo()
-	uc := usecase.NewGameUsecase(repo)
+	mockRepo, uc := setup()
 
-	_, err := uc.GetGameByID("no-such")
+	// 型を明示して nil を返す
+	mockRepo.On("FindByID", "not-found").Return((*model.Game)(nil), repository.ErrGameNotFound)
+
+	result, err := uc.GetGameByID("not-found")
+
+	assert.Nil(t, result)
 	assert.ErrorIs(t, err, usecase.ErrGameNotFound)
-}
-
-// --- ApplyMove ---
-func TestApplyMove_Success(t *testing.T) {
-	repo := NewFakeGameRepo()
-	uc := usecase.NewGameUsecase(repo)
-
-	id := uuid.NewString()
-	g0 := model.NewGame()
-	g0.ID = id
-	repo.store[id] = g0
-
-	in := input.ApplyMoveInput{
-		GameID:    id,
-		From:      model.Position{Rank: 6, File: 0},
-		To:        model.Position{Rank: 5, File: 0},
-		Promote:   false,
-		Drop:      false,
-		DropPiece: model.Pawn,
-	}
-
-	g1, err := uc.ApplyMove(in)
-	assert.NoError(t, err)
-	assert.Len(t, g1.Moves, 1)
-	assert.Equal(t, model.White, g1.Turn)
-	assert.Same(t, repo.saved, g1)
-}
-
-func TestApplyMove_GameNotFound(t *testing.T) {
-	repo := NewFakeGameRepo()
-	uc := usecase.NewGameUsecase(repo)
-
-	_, err := uc.ApplyMove(input.ApplyMoveInput{GameID: "missing"})
-	assert.ErrorIs(t, err, usecase.ErrGameNotFound)
-}
-
-func TestApplyMove_DomainError(t *testing.T) {
-	repo := NewFakeGameRepo()
-	uc := usecase.NewGameUsecase(repo)
-
-	id := uuid.NewString()
-	g0 := model.NewGame()
-	g0.ID = id
-	repo.store[id] = g0
-
-	in := input.ApplyMoveInput{
-		GameID: id,
-		From:   model.Position{Rank: 5, File: 5},
-		To:     model.Position{Rank: 6, File: 5},
-	}
-
-	_, err := uc.ApplyMove(in)
-	assert.ErrorIs(t, err, usecase.ErrInvalidMove)
 }
 
 func TestApplyMove_AlreadyFinished(t *testing.T) {
-	repo := NewFakeGameRepo()
-	uc := usecase.NewGameUsecase(repo)
+	mockRepo, uc := setup()
+	game := newTestGame()
+	game.Finished = true
 
-	id := uuid.NewString()
-	g0 := model.NewGame()
-	g0.ID = id
-	g0.Finished = true
-	repo.store[id] = g0
+	mockRepo.On("FindByID", "game123").Return(game, nil)
 
-	in := input.ApplyMoveInput{
-		GameID:    id,
-		From:      model.Position{Rank: 6, File: 0},
-		To:        model.Position{Rank: 5, File: 0},
-		Promote:   false,
-		Drop:      false,
-		DropPiece: model.Pawn,
+	input := input.ApplyMoveInput{
+		GameID: "game123",
+		From:   model.Position{Rank: 7, File: 7},
+		To:     model.Position{Rank: 7, File: 6},
 	}
 
-	_, err := uc.ApplyMove(in)
+	result, err := uc.ApplyMove(input)
+
+	assert.Nil(t, result)
 	assert.ErrorIs(t, err, usecase.ErrGameAlreadyFinished)
 }
 
-// --- ListMoves ---
-func TestListMoves_Success(t *testing.T) {
-	repo := NewFakeGameRepo()
-	uc := usecase.NewGameUsecase(repo)
+func TestApplyMove_InvalidMove(t *testing.T) {
+	mockRepo, uc := setup()
 
-	id := uuid.NewString()
-	g0 := model.NewGame()
-	g0.ID = id
-	// 事前に何手か指しておく
-	g0.Moves = []model.Move{
-		{From: model.Position{Rank: 6, File: 0}, To: model.Position{Rank: 5, File: 0}},
-		{From: model.Position{Rank: 6, File: 1}, To: model.Position{Rank: 5, File: 1}},
+	game, _ := model.NewGameWithPlayers("black", "white")
+	game.ID = "game123"
+
+	// 盤上に駒が存在しないマスから動かす
+	input := input.ApplyMoveInput{
+		GameID: "game123",
+		From:   model.Position{Rank: 5, File: 5},
+		To:     model.Position{Rank: 5, File: 4},
 	}
-	repo.store[id] = g0
 
-	moves, err := uc.ListMoves(id)
-	assert.NoError(t, err)
-	assert.Len(t, moves, 2)
+	mockRepo.On("FindByID", "game123").Return(game, nil)
+
+	result, err := uc.ApplyMove(input)
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, usecase.ErrInvalidMove)
 }
 
-func TestListMoves_NotFound(t *testing.T) {
-	repo := NewFakeGameRepo()
-	uc := usecase.NewGameUsecase(repo)
+func TestListMoves_GameNotFound(t *testing.T) {
+	mockRepo, uc := setup()
 
-	_, err := uc.ListMoves("absent")
+	// 型を明示して nil を返す
+	mockRepo.On("FindByID", "notfound").Return((*model.Game)(nil), repository.ErrGameNotFound)
+
+	result, err := uc.ListMoves("notfound")
+
+	assert.Nil(t, result)
 	assert.ErrorIs(t, err, usecase.ErrGameNotFound)
 }

@@ -12,6 +12,7 @@ import (
 	"shogi-rakuen/model"
 	"shogi-rakuen/usecase"
 	"shogi-rakuen/usecase/input"
+	"shogi-rakuen/usecase/output"
 	"testing"
 
 	"github.com/go-playground/validator/v10"
@@ -32,45 +33,47 @@ func (cv *customValidator) Validate(i interface{}) error {
 // --- ダミー usecase ---
 type DummyUserUsecase struct{}
 
-func (d *DummyUserUsecase) SignUp(in input.SignupInput) (model.UserResponse, error) {
-	return model.UserResponse{ID: 1, Email: in.Email, Username: in.Username, Rank: "未設定"}, nil
+func (d *DummyUserUsecase) SignUp(in input.SignupInput) (output.SignupOutput, error) {
+	return output.SignupOutput{ID: 1, Email: in.Email, Username: in.Username, RankType: model.RankTypeDan, RankLevel: 2}, nil
 }
 
-func (d *DummyUserUsecase) Login(in input.LoginInput) (string, error) {
+func (d *DummyUserUsecase) Login(in input.LoginInput) (output.LoginOutput, error) {
 	switch {
 	case in.Email == "no-user@example.com":
-		return "", usecase.ErrEmailNotFound
+		return output.LoginOutput{}, usecase.ErrEmailNotFound
 	case in.Password == "wrong":
-		return "", usecase.ErrInvalidPassword
+		return output.LoginOutput{}, usecase.ErrInvalidPassword
 	case in.Password == "no-secret":
 		os.Unsetenv("JWT_SECRET")
-		return "", usecase.ErrJWTSecretUnset
+		return output.LoginOutput{}, usecase.ErrJWTSecretUnset
 	default:
 		os.Setenv("JWT_SECRET", "test-secret")
-		return "dummytoken", nil
+		return output.LoginOutput{Token: "dummytoken"}, nil
 	}
 }
 
-func (d *DummyUserUsecase) GetUserById(id uint) (model.UserResponse, error) {
+func (d *DummyUserUsecase) GetUserById(id uint) (output.GetUserByIdOutput, error) {
 	switch id {
 	case 42:
-		return model.UserResponse{ID: 42, Email: "me@example.com", Username: "meuser", Rank: "段位"}, nil
+		return output.GetUserByIdOutput{ID: 42, Email: "me@example.com", Username: "meuser", RankType: model.RankTypeDan, RankLevel: 2}, nil
 	case 100:
-		return model.UserResponse{}, usecase.ErrUserNotFound
+		return output.GetUserByIdOutput{}, usecase.ErrUserNotFound
 	default:
-		return model.UserResponse{}, errors.New("db error")
+		return output.GetUserByIdOutput{}, errors.New("db error")
 	}
 }
 
 // EmailExistsUsecase は SignUp 時に ErrEmailAlreadyExists を返すだけのモック
 type EmailExistsUsecase struct{}
 
-func (d *EmailExistsUsecase) SignUp(in input.SignupInput) (model.UserResponse, error) {
-	return model.UserResponse{}, usecase.ErrEmailAlreadyExists
+func (d *EmailExistsUsecase) SignUp(in input.SignupInput) (output.SignupOutput, error) {
+	return output.SignupOutput{}, usecase.ErrEmailAlreadyExists
 }
-func (d *EmailExistsUsecase) Login(in input.LoginInput) (string, error) { return "", nil }
-func (d *EmailExistsUsecase) GetUserById(id uint) (model.UserResponse, error) {
-	return model.UserResponse{}, nil
+func (d *EmailExistsUsecase) Login(in input.LoginInput) (output.LoginOutput, error) {
+	return output.LoginOutput{}, nil
+}
+func (d *EmailExistsUsecase) GetUserById(id uint) (output.GetUserByIdOutput, error) {
+	return output.GetUserByIdOutput{}, nil
 }
 
 // setupEcho は共通の Echo インスタンスとバリデータを返す
@@ -151,7 +154,7 @@ func TestSignUp_Success(t *testing.T) {
 
 	if assert.NoError(t, uc.SignUp(c)) {
 		assert.Equal(t, http.StatusCreated, rec.Code)
-		assert.Contains(t, rec.Body.String(), "\"email\":\"test@example.com\"")
+		assert.Contains(t, rec.Body.String(), "\"Email\":\"test@example.com\"")
 	}
 }
 

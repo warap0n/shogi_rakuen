@@ -1,5 +1,7 @@
 package model
 
+import "fmt"
+
 // Color は先手／後手を表します
 type Color int
 
@@ -9,18 +11,45 @@ const (
 )
 
 // PieceType は駒の種類を表します
-type PieceType int
+type PieceType string
 
 const (
-	King PieceType = iota
-	Rook
-	Bishop
-	Gold
-	Silver
-	Knight
-	Lance
-	Pawn
+	Pawn   PieceType = "P" // 歩
+	Lance  PieceType = "L" // 香車
+	Knight PieceType = "N" // 桂馬
+	Silver PieceType = "S" // 銀
+	Gold   PieceType = "G" // 金
+	Bishop PieceType = "B" // 角
+	Rook   PieceType = "R" // 飛車
+	King   PieceType = "K" // 王
 )
+
+// AllPieceTypes はすべての駒種を列挙したスライスです
+var AllPieceTypes = []PieceType{
+	Pawn,
+	Lance,
+	Knight,
+	Silver,
+	Gold,
+	Bishop,
+	Rook,
+	King,
+}
+
+// String は PieceType をその文字列表記に変換します
+func (pt PieceType) String() string {
+	return string(pt)
+}
+
+// ParsePieceType は文字列から PieceType を復元します
+func ParsePieceType(s string) (PieceType, error) {
+	for _, pt := range AllPieceTypes {
+		if pt.String() == s {
+			return pt, nil
+		}
+	}
+	return "", fmt.Errorf("unknown PieceType: %s", s)
+}
 
 // Piece は１枚の駒を表します
 type Piece struct {

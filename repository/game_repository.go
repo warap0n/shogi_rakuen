@@ -1,10 +1,10 @@
-// Todo: 雛形のみ作成
-
 // repository/game_repository.go
+
 package repository
 
 import (
 	"errors"
+
 	"shogi-rakuen/model"
 
 	"gorm.io/gorm"
@@ -15,44 +15,88 @@ var (
 	ErrGameNotFound = errors.New("game not found")
 )
 
-// IGameRepository は対局永続化用のインターフェース
 type IGameRepository interface {
-	Save(g *model.Game) (*model.Game, error)
+	CreateGame(g *model.Game) (*model.Game, error)
 	FindByID(id string) (*model.Game, error)
+	AppendMove(g *model.Game, move model.Move) (*model.Game, error)
 }
 
 type gameRepository struct {
 	db *gorm.DB
 }
 
-// NewGameRepository は GORM ベースの IGameRepository を返します
 func NewGameRepository(db *gorm.DB) IGameRepository {
 	return &gameRepository{db: db}
 }
 
-// Save は対局オブジェクトを保存または更新します。
-// GORM の Save は primary key が空なら INSERT、埋まっていれば UPDATE 相当です。
-func (r *gameRepository) Save(g *model.Game) (*model.Game, error) {
-	if err := r.db.Save(g).Error; err != nil {
+// CreateGame は新規ゲームをデータベースに作成します
+func (r *gameRepository) CreateGame(g *model.Game) (*model.Game, error) {
+	// Game テーブルに INSERT（Board/Moves/Captured は gorm:"-" なので保存されない）
+	if err := r.db.Create(g).Error; err != nil {
 		return nil, err
 	}
 	return g, nil
 }
 
-// FindByID は指定された ID の対局を返します。
-// 見つからない場合は ErrGameNotFound を返します。
+// FindByID は games テーブルのメタ情報を取得し、
+// MoveEntity をすべて読み込んで Game.Moves に詰めるだけの実装に変更。
+// ──────────────────────────────────────────────────────────────
+// これにより、どんな手でも履歴として返却され、無効な手が混ざっていてもエラーとはなりません。
+// Board/Captured は常に nil のままなので、盤面再構築が必要な場合は
+// 呼び出し側（ユースケース層）で model.NewGameWithPlayers + for loop(ApplyMove) を行ってください。
 func (r *gameRepository) FindByID(id string) (*model.Game, error) {
-	var g model.Game
+	// 1) games テーブルからメタ情報だけ取得
+	var meta model.Game
 	err := r.db.
+		Model(&model.Game{}).
+		Select("id", "player_black_id", "player_white_id", "turn", "finished", "winner").
 		Where("id = ?", id).
-		Preload("Board").    // 必要に応じて関連もロード
-		Preload("Captured"). // map[string][]*Piece の扱いは別途カスタムが要るかも
-		First(&g).Error
+		Take(&meta).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrGameNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &g, nil
+
+	// 2) 取得した meta をベースに、Board/Captured は初期化せず Moves だけ使える Game を作成
+	game := &model.Game{
+		ID:            meta.ID,
+		PlayerBlackID: meta.PlayerBlackID,
+		PlayerWhiteID: meta.PlayerWhiteID,
+		Turn:          meta.Turn,
+		Finished:      meta.Finished,
+		Winner:        meta.Winner,
+		Board:         nil,                   // あえて nil のまま
+		Moves:         make([]model.Move, 0), // 履歴をここに詰める
+		Captured:      nil,                   // あえて nil のまま
+	}
+
+	// 3) moves テーブルを idx 昇順で取得し、Game.Moves に ToDomain() したものを append
+	var entities []model.MoveEntity
+	if err := r.db.
+		Where("game_id = ?", id).
+		Order("idx").
+		Find(&entities).Error; err != nil {
+		return nil, err
+	}
+	for _, me := range entities {
+		game.Moves = append(game.Moves, me.ToDomain())
+	}
+
+	// 4) Game.Moves にすべての履歴が入り、Board/Captured は引き続き nil の状態で返す
+	return game, nil
+}
+
+// AppendMove は一手を moves テーブルに追加し、in-memory の Game.Moves も更新して返します。
+// Domain の盤面ロジックは呼ばず、純粋に「履歴として保存するだけ」です。
+func (r *gameRepository) AppendMove(g *model.Game, move model.Move) (*model.Game, error) {
+	idx := len(g.Moves)
+	me := move.ToEntity(g.ID, idx)
+	if err := r.db.Create(&me).Error; err != nil {
+		return nil, err
+	}
+	// in-memory でも Moves に追加
+	g.Moves = append(g.Moves, move)
+	return g, nil
 }

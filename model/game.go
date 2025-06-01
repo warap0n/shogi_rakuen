@@ -8,23 +8,31 @@ import (
 
 // Game は１局の対局を管理します
 type Game struct {
-	ID            string
-	Board         *Board
-	Turn          Color
-	Moves         []Move
-	Captured      map[Color][]*Piece // 先手／後手の持ち駒
-	Finished      bool
-	Winner        Color
-	PlayerBlackID string
-	PlayerWhiteID string
+	// 永続化対象のフィールド
+	ID            string `json:"id" gorm:"column:id;primaryKey"`                      // ゲーム識別子
+	PlayerBlackID string `json:"player_black" gorm:"column:player_black_id;not null"` // 先手プレイヤーID
+	PlayerWhiteID string `json:"player_white" gorm:"column:player_white_id;not null"` // 後手プレイヤーID
+	Turn          Color  `json:"turn" gorm:"column:turn;not null"`                    // 現在の手番 (0=Black,1=White)
+	Finished      bool   `json:"finished" gorm:"column:finished;not null"`            // 対局終了フラグ
+	Winner        Color  `json:"winner" gorm:"column:winner;not null;default:0"`      // 勝者 (Black or White)
+
+	// 永続化しないフィールド（GORMマッピング除外）
+	Board    *Board             `json:"board,omitempty" gorm:"-"`    // メモリ上で再構築する盤面
+	Moves    []Move             `json:"moves,omitempty" gorm:"-"`    // 適用済みの手順リスト
+	Captured map[Color][]*Piece `json:"captured,omitempty" gorm:"-"` // 持ち駒（先手／後手それぞれの持ち駒）
 }
 
-// 盤面のみの初期化
-func NewGame() *Game {
+// gormにgames テーブルにマッピング
+func (Game) TableName() string {
+	return "games"
+}
+func NewGame(blackID, whiteID string) *Game {
 	return &Game{
-		Board:    NewBoard(),
-		Turn:     Black,
-		Captured: map[Color][]*Piece{Black: {}, White: {}},
+		PlayerBlackID: blackID,
+		PlayerWhiteID: whiteID,
+		Board:         NewBoard(),
+		Turn:          Black,
+		Captured:      map[Color][]*Piece{Black: {}, White: {}},
 	}
 }
 
@@ -36,93 +44,132 @@ func NewGameWithPlayers(blackID, whiteID string) (*Game, error) {
 	if blackID == whiteID {
 		return nil, ErrSamePlayer
 	}
-	g := NewGame()
-	g.PlayerBlackID = blackID
-	g.PlayerWhiteID = whiteID
+	g := NewGame(blackID, whiteID)
 	return g, nil
 }
 
+// ApplyMove は１手を適用します（Drop or Move → Promotion → Capture → Place → NextTurn）
 func (g *Game) ApplyMove(m Move) error {
-	// 0) ゲーム終了後はエラー
 	if g.Finished {
 		return ErrGameAlreadyFinished
 	}
 
-	var p *Piece
-	var err error
+	// 1) 駒を取得（持駒 or 盤上）
+	p, err := g.takePiece(m)
+	if err != nil {
+		return err
+	}
 
-	// 1) Drop（打ち）か移動か
-	if m.Drop {
-		pcs := g.Captured[g.Turn]
-		// 1-1) DropPiece と一致する駒を手持ちから探す
-		idx := -1
-		for i, cp := range pcs {
-			if cp.Type == m.DropPiece {
-				idx = i
-				break
-			}
-		}
-		if idx < 0 {
-			return ErrNoPieceToDrop
-		}
-		// 1-2) その駒を取り出し、手持ちから除去
-		p = pcs[idx]
-		g.Captured[g.Turn] = append(pcs[:idx], pcs[idx+1:]...)
-
-	} else {
-		// 1') 移動元の駒を取得
-		p, err = g.Board.PieceAt(m.From)
-		if errors.Is(err, ErrOutOfBounds) {
-			return fmt.Errorf("source %v: %w", m.From, ErrOutOfBounds)
-		}
-		if err != nil {
-			return err
-		}
-		if p == nil {
-			return ErrNoPieceAtSource
-		}
-		// 1'') 移動元を空に
-		if err := g.Board.SetPiece(m.From, nil); err != nil {
-			return err
+	if !m.Drop {
+		if !p.ValidMove(m.From, m.To, g.Board) {
+			return ErrInvalidMove
 		}
 	}
 
 	// 2) 成り処理
-
 	if m.Promote {
-		// 2-1) そもそもプロモート可能な駒か
-		if !p.Type.Promotable() {
-			return ErrInvalidPromotionPiece
+		if err := g.handlePromotion(p, m); err != nil {
+			return err
 		}
-		// 2-2) 移動元 or 移動先がプロモーションゾーンか
-		if !(m.From.InPromotionZone(g.Turn) || m.To.InPromotionZone(g.Turn)) {
-			return ErrInvalidPromotionZone
-		}
-		p.Promoted = true
 	}
 
-	// 3) 移動先の駒を取得
-	captured, err := g.Board.PieceAt(m.To)
+	// 3) 相手駒を取る
+	if err := g.handleCapture(m); err != nil {
+		return err
+	}
+
+	// 4) 駒を配置
+	if err := g.handlePlace(p, m); err != nil {
+		return err
+	}
+
+	// 5) ターン更新と履歴
+	g.nextTurn(m)
+	return nil
+}
+
+// takePiece は持駒から取るか盤上から取るかを判断して駒を取得し元の場所をクリアします
+func (g *Game) takePiece(m Move) (*Piece, error) {
+	if m.Drop {
+		return g.extractCapturedPiece(m)
+	}
+	return g.extractBoardPiece(m)
+}
+
+// extractCapturedPiece は持駒から指定駒を取り出し、スライスから除去します
+func (g *Game) extractCapturedPiece(m Move) (*Piece, error) {
+	piece, rest, err := findAndRemovePiece(g.Captured[g.Turn], m.DropPiece)
+	if err != nil {
+		return nil, err
+	}
+	g.Captured[g.Turn] = rest
+	return piece, nil
+}
+
+// extractBoardPiece は盤上の指定座標から駒を取り出し、そのマスを空にします
+func (g *Game) extractBoardPiece(m Move) (*Piece, error) {
+	p, err := g.Board.PieceAt(m.From)
+	if errors.Is(err, ErrOutOfBounds) {
+		return nil, fmt.Errorf("source %v: %w", m.From, ErrOutOfBounds)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if p == nil {
+		return nil, ErrNoPieceAtSource
+	}
+	if err := g.Board.SetPiece(m.From, nil); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// findAndRemovePiece は pieces から最初に見つかった駒種を取り出し、残りのスライスを返します
+func findAndRemovePiece(pieces []*Piece, pt PieceType) (*Piece, []*Piece, error) {
+	for i, cp := range pieces {
+		if cp.Type == pt {
+			return cp, append(pieces[:i], pieces[i+1:]...), nil
+		}
+	}
+	return nil, nil, ErrNoPieceToDrop
+}
+
+// handlePromotion は成り条件をチェックし、駒に成りフラグを立てます
+func (g *Game) handlePromotion(p *Piece, m Move) error {
+	if !p.Type.Promotable() {
+		return ErrInvalidPromotionPiece
+	}
+	if !(m.From.InPromotionZone(g.Turn) || m.To.InPromotionZone(g.Turn)) {
+		return ErrInvalidPromotionZone
+	}
+	p.Promoted = true
+	return nil
+}
+
+// handleCapture は移動先に敵駒があれば持駒に追加します
+func (g *Game) handleCapture(m Move) error {
+	cap, err := g.Board.PieceAt(m.To)
 	if errors.Is(err, ErrOutOfBounds) {
 		return fmt.Errorf("destination %v: %w", m.To, ErrOutOfBounds)
 	}
 	if err != nil {
 		return err
 	}
-	// 3') 取った駒は持ち駒に追加（成り戻し）
-	if captured != nil {
-		captured.Promoted = false
-		g.Captured[g.Turn] = append(g.Captured[g.Turn], captured)
+	if cap != nil {
+		cap.Promoted = false
+		cap.Color = g.Turn // 持ち駒にする際は手番の色に変更
+		g.Captured[g.Turn] = append(g.Captured[g.Turn], cap)
 	}
+	return nil
+}
 
-	// 4) 駒を置く
-	if err := g.Board.SetPiece(m.To, p); err != nil {
-		return err
-	}
+// handlePlace は駒 p を指定座標へ配置します
+func (g *Game) handlePlace(p *Piece, m Move) error {
+	return g.Board.SetPiece(m.To, p)
+}
 
-	// 5) ターン切り替え・履歴追加
+// nextTurn はターンを切替え、手番履歴に追加します
+func (g *Game) nextTurn(m Move) {
 	g.Turn = 1 - g.Turn
 	g.Moves = append(g.Moves, m)
-
-	return nil
 }
