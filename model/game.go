@@ -8,23 +8,31 @@ import (
 
 // Game は１局の対局を管理します
 type Game struct {
-	ID            string
-	Board         *Board
-	Turn          Color
-	Moves         []Move
-	Captured      map[Color][]*Piece // 先手／後手の持ち駒
-	Finished      bool
-	Winner        Color
-	PlayerBlackID string
-	PlayerWhiteID string
+	// 永続化対象のフィールド
+	ID            string `json:"id" gorm:"column:id;primaryKey"`                      // ゲーム識別子
+	PlayerBlackID string `json:"player_black" gorm:"column:player_black_id;not null"` // 先手プレイヤーID
+	PlayerWhiteID string `json:"player_white" gorm:"column:player_white_id;not null"` // 後手プレイヤーID
+	Turn          Color  `json:"turn" gorm:"column:turn;not null"`                    // 現在の手番 (0=Black,1=White)
+	Finished      bool   `json:"finished" gorm:"column:finished;not null"`            // 対局終了フラグ
+	Winner        Color  `json:"winner" gorm:"column:winner;not null;default:0"`      // 勝者 (Black or White)
+
+	// 永続化しないフィールド（GORMマッピング除外）
+	Board    *Board             `json:"board,omitempty" gorm:"-"`    // メモリ上で再構築する盤面
+	Moves    []Move             `json:"moves,omitempty" gorm:"-"`    // 適用済みの手順リスト
+	Captured map[Color][]*Piece `json:"captured,omitempty" gorm:"-"` // 持ち駒（先手／後手それぞれの持ち駒）
 }
 
-// 盤面のみの初期化
-func NewGame() *Game {
+// gormにgames テーブルにマッピング
+func (Game) TableName() string {
+	return "games"
+}
+func NewGame(blackID, whiteID string) *Game {
 	return &Game{
-		Board:    NewBoard(),
-		Turn:     Black,
-		Captured: map[Color][]*Piece{Black: {}, White: {}},
+		PlayerBlackID: blackID,
+		PlayerWhiteID: whiteID,
+		Board:         NewBoard(),
+		Turn:          Black,
+		Captured:      map[Color][]*Piece{Black: {}, White: {}},
 	}
 }
 
@@ -36,9 +44,7 @@ func NewGameWithPlayers(blackID, whiteID string) (*Game, error) {
 	if blackID == whiteID {
 		return nil, ErrSamePlayer
 	}
-	g := NewGame()
-	g.PlayerBlackID = blackID
-	g.PlayerWhiteID = whiteID
+	g := NewGame(blackID, whiteID)
 	return g, nil
 }
 
@@ -52,6 +58,12 @@ func (g *Game) ApplyMove(m Move) error {
 	p, err := g.takePiece(m)
 	if err != nil {
 		return err
+	}
+
+	if !m.Drop {
+		if !p.ValidMove(m.From, m.To, g.Board) {
+			return ErrInvalidMove
+		}
 	}
 
 	// 2) 成り処理
@@ -145,6 +157,7 @@ func (g *Game) handleCapture(m Move) error {
 	}
 	if cap != nil {
 		cap.Promoted = false
+		cap.Color = g.Turn // 持ち駒にする際は手番の色に変更
 		g.Captured[g.Turn] = append(g.Captured[g.Turn], cap)
 	}
 	return nil
