@@ -31,21 +31,19 @@ func NewGameRepository(db *gorm.DB) IGameRepository {
 
 // CreateGame は新規ゲームをデータベースに作成します
 func (r *gameRepository) CreateGame(g *model.Game) (*model.Game, error) {
-	// Game テーブルに INSERT（Board/Moves/Captured は gorm:"-" なので保存されない）
+	// Board/Moves/Captured は gorm:"-" なので保存されない
 	if err := r.db.Create(g).Error; err != nil {
 		return nil, err
 	}
 	return g, nil
 }
 
-// FindByID は games テーブルのメタ情報を取得し、
-// MoveEntity をすべて読み込んで Game.Moves に詰めるだけの実装に変更。
-// ──────────────────────────────────────────────────────────────
-// これにより、どんな手でも履歴として返却され、無効な手が混ざっていてもエラーとはなりません。
-// Board/Captured は常に nil のままなので、盤面再構築が必要な場合は
-// 呼び出し側（ユースケース層）で model.NewGameWithPlayers + for loop(ApplyMove) を行ってください。
+// FindByID は「Board と Captured を含めた状態で」Game を返します。
+// 1) games テーブルから ID, PlayerBlackID, PlayerWhiteID, Turn, Finished, Winner だけ取得
+// 2) model.NewGameWithPlayers で初期盤面＋空の持ち駒を生成し、上記メタ情報をセット
+// 3) moves テーブルを idx 昇順で取得し、一手ずつ ApplyMove する。
 func (r *gameRepository) FindByID(id string) (*model.Game, error) {
-	// 1) games テーブルからメタ情報だけ取得
+	// 1) メタ情報だけ取得
 	var meta model.Game
 	err := r.db.
 		Model(&model.Game{}).
@@ -59,20 +57,17 @@ func (r *gameRepository) FindByID(id string) (*model.Game, error) {
 		return nil, err
 	}
 
-	// 2) 取得した meta をベースに、Board/Captured は初期化せず Moves だけ使える Game を作成
-	game := &model.Game{
-		ID:            meta.ID,
-		PlayerBlackID: meta.PlayerBlackID,
-		PlayerWhiteID: meta.PlayerWhiteID,
-		Turn:          meta.Turn,
-		Finished:      meta.Finished,
-		Winner:        meta.Winner,
-		Board:         nil,                   // あえて nil のまま
-		Moves:         make([]model.Move, 0), // 履歴をここに詰める
-		Captured:      nil,                   // あえて nil のまま
+	// 2) 初期盤面を生成
+	latestGame, err := model.NewGameWithPlayers(meta.PlayerBlackID, meta.PlayerWhiteID)
+	if err != nil {
+		return nil, err
 	}
+	latestGame.ID = meta.ID
+	latestGame.Turn = meta.Turn
+	latestGame.Finished = meta.Finished
+	latestGame.Winner = meta.Winner
 
-	// 3) moves テーブルを idx 昇順で取得し、Game.Moves に ToDomain() したものを append
+	// 3) moves テーブルをすべて取得し、ApplyMove で再構築（無効な手はスキップする）
 	var entities []model.MoveEntity
 	if err := r.db.
 		Where("game_id = ?", id).
@@ -81,22 +76,25 @@ func (r *gameRepository) FindByID(id string) (*model.Game, error) {
 		return nil, err
 	}
 	for _, me := range entities {
-		game.Moves = append(game.Moves, me.ToDomain())
+		domainMove := me.ToDomain()
+		if applyErr := latestGame.ApplyMove(domainMove); applyErr != nil {
+			// Todo: 無効なMoveの処理
+			// そもそもMoveに無効なものが含まれないような設計にするのが理想
+			return nil, applyErr
+		}
 	}
 
-	// 4) Game.Moves にすべての履歴が入り、Board/Captured は引き続き nil の状態で返す
-	return game, nil
+	return latestGame, nil
 }
 
-// AppendMove は一手を moves テーブルに追加し、in-memory の Game.Moves も更新して返します。
-// Domain の盤面ロジックは呼ばず、純粋に「履歴として保存するだけ」です。
+// AppendMove は一手を moves テーブルに追加し、in-memory の Game.Moves にも追加します。
+// 盤面チェックは行わず、あくまで「履歴を保存するだけ」。
 func (r *gameRepository) AppendMove(g *model.Game, move model.Move) (*model.Game, error) {
 	idx := len(g.Moves)
 	me := move.ToEntity(g.ID, idx)
 	if err := r.db.Create(&me).Error; err != nil {
 		return nil, err
 	}
-	// in-memory でも Moves に追加
 	g.Moves = append(g.Moves, move)
 	return g, nil
 }
