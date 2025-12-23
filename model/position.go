@@ -8,8 +8,8 @@ import (
 // どちらも 0〜8 の範囲を取る想定です
 // String と ParsePosition で 1〜9 の文字列表記に変換できます。
 type Position struct {
-	Rank int // 段 0..8
-	File int // 筋 0..8
+	Rank int `json:"rank"` // 0〜8 の範囲
+	File int `json:"file"`
 }
 
 // OnBoard は盤内かどうかをチェックします

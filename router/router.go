@@ -23,6 +23,7 @@ func (cv *CustomValidator) Validate(i interface{}) error {
 // NewRouter コントローラを渡して Echo を返す
 func NewRouter(
 	userController controller.IUserController,
+	gameController controller.IGameController,
 ) *echo.Echo {
 	// Echo インスタンス生成
 	e := echo.New()
@@ -59,6 +60,12 @@ func NewRouter(
 
 	// 認証必須ルート
 	auth.GET("/me", userController.Me)
+
+	game := e.Group("/game")
+	game.POST("/start", gameController.StartGame)
+	game.GET("/:id", gameController.GetGame)
+	game.POST("/:id/move", gameController.ApplyMove)
+	game.GET("/:id/moves", gameController.ListMoves)
 
 	return e
 }

@@ -24,15 +24,19 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	db.AutoMigrate(&model.User{})
+	db.AutoMigrate(&model.User{}, &model.Game{}, &model.MoveEntity{})
 
 	// DI: repository → usecase → controller
 	userRepo := repository.NewUserRepository(db)
 	userUsecase := usecase.NewUserUsecase(userRepo)
 	userController := controller.NewUserController(userUsecase)
 
+	gameRepo := repository.NewGameRepository(db)
+	gameUsecase := usecase.NewGameUsecase(gameRepo)
+	gameController := controller.NewGameController(gameUsecase)
+
 	// Echo インスタンスとルータ設定
-	e := router.NewRouter(userController)
+	e := router.NewRouter(userController, gameController)
 
 	// サーバ起動
 	e.Logger.Fatal(e.Start(":8080"))
